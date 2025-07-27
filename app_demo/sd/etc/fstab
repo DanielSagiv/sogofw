@@ -1,0 +1,4 @@
+# <file system>                              <mount point>   <type>  <options>                                                             <dump>  <pass>
+tmpfs                                          /tmp            tmpfs   defaults,nosuid                                                          0   0
+UUID=5cbdff3f-91da-44e8-9747-803ec9c36628      /               ext4    defaults,noatime,nodiratime,commit=600,errors=remount-ro,x-gvfs-hide     0   1
+UUID=9A95-E62C                                 /mnt/sd1        vfat    defaults,nosuid                                                          0   0

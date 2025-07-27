@@ -1,0 +1,278 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <glib-unix.h>
+#include <unistd.h>
+#include <errno.h>
+#include <pthread.h>
+#include <time.h>
+
+#include "gps.h"
+#include "bno055_api.h"
+#include "camera.h"
+#include "ble_button.h"
+
+#define VERSION  "v1.00.001"
+
+#define LED_OFF   0
+#define LED_SOLID 1
+#define LED_BLINK 2
+
+bool recording = FALSE;
+
+void get_time(char *time_buf)
+{
+  time_t currentTime;
+  struct tm *timeInfo;
+
+  time(&currentTime);
+  timeInfo = localtime(&currentTime);
+
+  strftime(time_buf, 20, "%m%d%Y-%H%M%S", timeInfo);
+  printf("%s\n", time_buf);
+}
+
+void led_blue_show(unsigned char led)
+{
+  if (led == LED_BLINK)
+  {
+    system("echo heartbeat | sudo tee /sys/class/leds/blue_led/trigger");
+  }
+  else if (led == LED_SOLID)
+  {
+    system("echo default-on | sudo tee /sys/class/leds/blue_led/trigger");
+  }
+  else
+  {
+    //system("echo none | sudo tee /sys/class/leds/red_led/trigger");
+    //system("echo none | sudo tee /sys/class/leds/green_led/trigger");
+    system("echo none | sudo tee /sys/class/leds/blue_led/trigger");
+  }
+}
+
+void led_green_show(bool onoff)
+{
+  if (onoff)
+  {
+    system("echo default-on | sudo tee /sys/class/leds/green_led/trigger");
+  }
+  else
+  {
+    system("echo none | sudo tee /sys/class/leds/green_led/trigger");
+  }
+}
+
+void led_strip_show(bool onoff)
+{
+  if (onoff)
+  {
+    /* 1000 hz */
+
+    system("echo 0 | sudo tee /sys/class/pwm/pwmchip2/export");
+    system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/period");
+    system("echo 000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/duty_cycle");
+    system("echo 1 | sudo tee /sys/class/pwm/pwmchip2/pwm0/enable");
+  }
+  else
+  {
+    system("echo 0 | sudo tee /sys/class/pwm/pwmchip2/export");
+    system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/period");
+    system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/duty_cycle");
+    system("echo 1 | sudo tee /sys/class/pwm/pwmchip2/pwm0/enable");
+  }
+
+}
+
+void led_button_show(bool onoff)
+{
+  if (access("/sys/class/gpio/gpio111", 0))
+  {
+    system("echo 111 | sudo tee /sys/class/gpio/export");
+    system("echo out | sudo tee /sys/class/gpio/gpio111/direction");
+  }
+
+  if (onoff)
+  {
+    system("echo 1 | sudo tee /sys/class/gpio/gpio111/value");
+  }
+  else
+  {
+    system("echo 0 | sudo tee /sys/class/gpio/gpio111/value");
+  }
+}
+
+int get_adc_button(void)
+{
+  FILE *fp;
+  int len, value;
+  unsigned char read_buf[10];
+
+  fp = fopen("/sys/bus/iio/devices/iio:device0/in_voltage4_raw", "r");
+  if (fp == NULL)
+  {
+    printf("[%s]:[%d] open adc file error\r\n", __FUNCTION__, __LINE__);
+    return -1;
+  }
+
+  memset(read_buf, 0, sizeof(read_buf));
+  len  = fread(read_buf, sizeof(read_buf), 1, fp);
+  value = strtol(read_buf, NULL, 10);
+  //printf("len:%d, value:%d\n", len, value);
+
+  fclose(fp);
+
+  return value;
+}
+
+void *ble_button_thread(void *arg)
+{
+  while (1)
+  {
+    if (BTN_TOUCH == get_ble_button())
+    {
+      recording ^= TRUE;
+    }
+    else
+    {
+      sleep(2);
+    }
+  }
+
+  return NULL;
+}
+
+void sig_handler(int sig)
+{
+  if (sig == SIGCHLD)
+  {
+    int status;
+
+    waitpid(-1, &status, WNOHANG);
+    recording = FALSE;
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  int ret;
+  int stat;
+  pid_t pid;
+  int gps_port;
+  int gps_fd;
+  int imu_fd;
+  pthread_t tid = 0;
+  char gps_data[256];
+  char imu_data[256];
+  char time_buf[30];
+  char file_name[80];
+
+#if 0
+  if (-1 == daemon(0, 0))
+  {
+    printf("daemon error\n");
+    exit(1);
+  }
+#endif
+
+  //led_blue_show(FALSE);
+  bno055_start();
+  gps_port = gps_open();
+  led_blue_show(LED_SOLID);
+  led_strip_show(TRUE);
+  get_time(time_buf);
+
+  if (pthread_create(&tid, NULL, ble_button_thread, NULL))
+  {
+    printf("Create button pthread failed\n");
+    return -1;
+  }
+  pthread_detach(tid);
+
+  //while (1)
+  {
+    //while (BTN_TOUCH != get_button())
+    while(recording == FALSE)
+    {
+      if (get_adc_button() < 100)
+      {
+        recording ^= TRUE;
+      }
+      sleep(1);
+    }
+
+    pid = fork();
+    if (pid == 0)
+    {
+      /* Child process */
+
+      //signal(SIGCHLD, SIG_IGN);
+
+      memset(file_name, 0, sizeof(file_name));
+      sprintf(file_name, "/home/khadas/video_%s.mp4", time_buf);
+      creat(file_name, 0666);
+
+      led_button_show(TRUE);
+      led_blue_show(LED_BLINK);
+      camera_process(file_name);
+      led_blue_show(LED_OFF);
+      led_button_show(FALSE);
+
+      recording = FALSE;
+      signal(SIGCHLD, SIG_DFL);
+    }
+    else if (pid > 0)
+    {
+      /* Parent process */
+
+      memset(file_name, 0, sizeof(file_name));
+      sprintf(file_name, "/home/khadas/gps_%s.csv", time_buf);
+      gps_fd = creat(file_name, 0666);
+      memset(file_name, 0, sizeof(file_name));
+      sprintf(file_name, "/home/khadas/imu_%s.csv", time_buf);
+      imu_fd = creat(file_name, 0666);
+
+      signal(SIGCHLD, sig_handler);
+      while (recording)
+      {
+        ret = gps_outdata(gps_port, gps_data, sizeof(gps_data));
+        if (ret > 0)
+        {
+          ret = write(gps_fd, gps_data, ret);
+          printf("Gps:%d", ret);
+        }
+
+        usleep(300 * 1000);
+
+        ret = bno055_data(imu_data, sizeof(imu_data));
+        if (ret > 0)
+        {
+          ret = write(imu_fd, imu_data, ret);
+          printf("Imu:%d ", ret);
+        }
+
+        if (get_adc_button() < 100)
+        {
+          recording ^= TRUE;
+        }
+      }
+
+      if (tid)
+      {
+        ret = pthread_cancel(tid);
+	  }
+
+      kill(pid, 2);
+      wait(&stat);
+    }
+  }
+
+  led_strip_show(FALSE);
+  gps_close(gps_port);
+  close(gps_fd);
+  close(imu_fd);
+
+  return 0;
+}

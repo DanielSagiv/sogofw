@@ -1,0 +1,14 @@
+[Unit]
+Description=APP_DEMO_SERVICE
+After=network.target
+
+[Service]
+ExecStart=/home/khadas/prog/app_demo/app_demo
+WorkingDirectory=/home/khadas/prog/app_demo
+StandardOutput=journal
+StandardError=journal
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

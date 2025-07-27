@@ -1,0 +1,5 @@
+# <file system>                              <mount point>   <type>  <options>                                                             <dump>  <pass>
+tmpfs                                          /tmp            tmpfs   defaults,nosuid                                                          0   0
+UUID=1649ac61-a442-426a-ad3a-7d86dc9d4410      /               ext4    defaults,noatime,nodiratime,commit=600,errors=remount-ro,x-gvfs-hide     0   1
+UUID=b99216d2-b1b1-4139-a946-d98cb99e830a      /boot               ext4    defaults,noatime,nodiratime,commit=600,errors=remount-ro,x-gvfs-hide     0   1
+/dev/mmcblk1p1                                 /mnt/sdcard     vfat    defaults,uid=1000,gid=1000,dmask=000,fmask=000                           0   0
