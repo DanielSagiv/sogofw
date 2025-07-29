@@ -13,7 +13,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include "gps.h"
-#include "bno055_api.h"
+#include "camera_imu.h"
 #include "camera.h"
 #include "ble_button.h"
 
@@ -260,7 +260,7 @@ int main(int argc, char *argv[]) {
     
     led_green_show(false);
     initialize_camera_system();
-    bno055_start();
+    camera_imu_start();
     gps_port = gps_open();
     led_strip_show(true);
     get_time(time_buf);
@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
                 }
                 usleep(300 * 1000);
 
-                ret = bno055_data(imu_data, sizeof(imu_data));
+                ret = camera_imu_get_data(imu_data, sizeof(imu_data));
                 if (ret > 0) {
                     ret = write(imu_fd, imu_data, ret);
                     printf("Imu:%d ", ret);
@@ -320,7 +320,7 @@ int main(int argc, char *argv[]) {
     // Cleanup code
     led_strip_show(false);
     gps_close(gps_port);
-    bno055_stop();
+    camera_imu_stop();
     cleanup_camera_system();
 
     return 0;

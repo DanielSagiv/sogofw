@@ -11,8 +11,7 @@ CFLAGS += `pkg-config --cflags --libs glib-2.0` -L lib64/ -I imu/ -I gps/ -I cam
 OBJS := \
   app/app_main.o \
 	gps/gps.o \
-	imu/bno055.o \
-	imu/bno055_api.o \
+	imu/camera_imu.o \
 	input/ble_button.o
 
 all: app_demo
