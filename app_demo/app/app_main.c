@@ -47,6 +47,7 @@ void sig_handler(int sig);
 // Global variables
 pthread_mutex_t recording_mutex = PTHREAD_MUTEX_INITIALIZER;
 bool recording = false;
+bool imu_running = false; // Added to track IMU data collection status
 
 void get_time(char *time_buf) {
     time_t currentTime;
@@ -215,36 +216,11 @@ void cleanup_camera_system() {
 }
 
 void *imu_acc_thread(void *arg) {
-    int ret;
-    float xy;
-    float acc_last = 0;
-    float acc_sum = 0;
-    float acc_derta;
-    int sample_times = 10;
-    u8 trigger_count = 0;
-
-    while (1) {
-        acc_sum = 0;
-        for (int i = 0; i < sample_times; i++) {
-            ret = bno055_get_accxy(&xy);
-            if (ret == 0) {
-                acc_sum += xy;
-                usleep(100 * 1000);
-            }
-        }
-        /*
-        acc_derta = acc_sum/sample_times - acc_last;
-        acc_last = acc_sum/sample_times;
-        fabs(acc_derta) > 5 ? trigger_count++ : (trigger_count = 0);
-        if (trigger_count >= 3) {
-            trigger_count = 0;
-            if (!get_recording_state()) {
-                set_recording_state(true);
-                sleep(30);
-            }
-        }*/
-    }
-    return NULL;
+    // IMU data is now handled by the combined camera/IMU script
+    // No need to start separate IMU process
+    printf("IMU data collection started (handled by camera script)\n");
+    imu_running = true;
+    return NULL; // Exit the thread immediately
 }
 
 void sig_handler(int sig) {
@@ -299,9 +275,9 @@ int main(int argc, char *argv[]) {
         if (get_recording_state()) {
             // Open GPS and IMU files
             get_time(time_buf);
-            sprintf(file_name, "/mnt/sdcard/gps_%s.csv", time_buf);
+            sprintf(file_name, "/home/sagiv/sogofw/app_demo/recordings/gps_%s.csv", time_buf);
             gps_fd = creat(file_name, 0666);
-            sprintf(file_name, "/mnt/sdcard/imu_%s.csv", time_buf);
+            sprintf(file_name, "/home/sagiv/sogofw/app_demo/recordings/imu_%s.csv", time_buf);
             imu_fd = creat(file_name, 0666);
 
             // Record loop
