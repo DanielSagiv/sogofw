@@ -12,7 +12,7 @@
 #define GPIO_EXPORT "/sys/class/gpio/export"
 #define GPIO_DIRECTION "/sys/class/gpio/gpio%d/direction"
 #define GPIO_VALUE "/sys/class/gpio/gpio%d/value"
-#define GPIO_PIN 17  // GPIO 17 (Pin 11) - matches your physical connection
+#define GPIO_PIN 513  // GPIO 513 - one of the working GPIOs from our earlier testing
 
 static bool gpio_initialized = false;
 
