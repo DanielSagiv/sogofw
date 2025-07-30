@@ -1,11 +1,18 @@
 #!/bin/bash
-echo "Monitoring GPIO 17 using libgpiod (Press Ctrl+C to exit)"
+
+CHIP="gpiochip0"
+LINE=17
+
+echo "📟 Monitoring GPIO $LINE on $CHIP (Press Ctrl+C to exit)"
+
 while true; do
-    val=$(gpioget gpiochip4 17)
-    if [ "$val" -eq 0 ]; then
+    val=$(gpioget $CHIP $LINE 2>/dev/null)
+    if [ "$val" = "0" ]; then
         echo "🔴 Button Pressed"
-    else
+    elif [ "$val" = "1" ]; then
         echo "⚪️ Button Not Pressed"
+    else
+        echo "⚠️ GPIO read error or unknown state: '$val'"
     fi
     sleep 0.3
 done
