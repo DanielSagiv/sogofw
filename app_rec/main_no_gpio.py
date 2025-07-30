@@ -96,8 +96,15 @@ class MultiCameraRecorder:
         cmd = f"rpicam-vid --camera 1 --output {filepath} --timeout 0"
         
         try:
-            self.camera1_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Capture stderr to see any errors
+            self.camera1_process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
             print(f"Camera 1 recording started: {filename}")
+            print(f"Command: {cmd}")
         except Exception as e:
             print(f"Error starting camera 1: {e}")
     
@@ -110,8 +117,15 @@ class MultiCameraRecorder:
         cmd = f"rpicam-vid --output {filepath} --timeout 0"
         
         try:
-            self.camera2_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Capture stderr to see any errors
+            self.camera2_process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
             print(f"Camera 2 recording started: {filename}")
+            print(f"Command: {cmd}")
         except Exception as e:
             print(f"Error starting camera 2: {e}")
     
