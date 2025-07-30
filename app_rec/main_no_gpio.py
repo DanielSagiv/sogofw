@@ -92,8 +92,8 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with shell execution
-        cmd = f"rpicam-vid --camera 1 --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview --inline"
+        # Start rpicam-vid for camera 1 with minimal parameters
+        cmd = f"rpicam-vid --camera 1 --output {filepath} --timeout 0"
         
         try:
             self.camera1_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -106,8 +106,8 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 with shell execution
-        cmd = f"rpicam-vid --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview --inline"
+        # Start rpicam-vid for camera 2 with minimal parameters
+        cmd = f"rpicam-vid --output {filepath} --timeout 0"
         
         try:
             self.camera2_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
