@@ -7,6 +7,7 @@ CC := gcc
 
 CFLAGS := -g -lm -lpthread -Wall 
 CFLAGS += `pkg-config --cflags --libs glib-2.0` -L lib64/ -I imu/ -I gps/ -I camera/ -I input/
+LDFLAGS := -lgpiod
 
 OBJS := \
   app/app_main.o \
@@ -18,7 +19,7 @@ OBJS := \
 all: app_demo
 
 app_demo: $(OBJS)
-	@$(CC) -o $@ $(OBJS) $(SYSROOT) $(CFLAGS)
+	@$(CC) -o $@ $(OBJS) $(SYSROOT) $(CFLAGS) $(LDFLAGS)
 
 %.o: %.c
 	@$(CC) $(CFLAGS) -c $< -o $@
