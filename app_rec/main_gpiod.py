@@ -246,21 +246,11 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with raw H264
-        cmd = [
-            "rpicam-vid", 
-            "--camera", "1",
-            "--width", "1920",
-            "--height", "1080",
-            "--framerate", "30",
-            "--output", str(filepath),
-            "--timeout", "0",
-            "--nopreview",
-            "--inline"
-        ]
+        # Start rpicam-vid for camera 1 with shell execution
+        cmd = f"rpicam-vid --camera 1 --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview --inline"
         
         try:
-            self.camera1_process = subprocess.Popen(cmd)
+            self.camera1_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"Camera 1 recording started: {filename}")
         except Exception as e:
             print(f"Error starting camera 1: {e}")
@@ -270,20 +260,11 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 with raw H264
-        cmd = [
-            "rpicam-vid",
-            "--width", "1920", 
-            "--height", "1080",
-            "--framerate", "30",
-            "--output", str(filepath),
-            "--timeout", "0",
-            "--nopreview",
-            "--inline"
-        ]
+        # Start rpicam-vid for camera 2 with shell execution
+        cmd = f"rpicam-vid --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview --inline"
         
         try:
-            self.camera2_process = subprocess.Popen(cmd)
+            self.camera2_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"Camera 2 recording started: {filename}")
         except Exception as e:
             print(f"Error starting camera 2: {e}")
