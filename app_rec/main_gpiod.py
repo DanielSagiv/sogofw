@@ -243,20 +243,20 @@ class MultiCameraRecorder:
     
     def start_camera1_recording(self, timestamp):
         """Start RPi camera 1 recording"""
-        filename = f"camera1_{timestamp}.mp4"
+        filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with MP4 format
+        # Start rpicam-vid for camera 1 with raw H264
         cmd = [
             "rpicam-vid", 
             "--camera", "1",
             "--width", "1920",
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",
             "--output", str(filepath),
             "--timeout", "0",
-            "--nopreview"
+            "--nopreview",
+            "--inline"
         ]
         
         try:
@@ -267,19 +267,19 @@ class MultiCameraRecorder:
     
     def start_camera2_recording(self, timestamp):
         """Start RPi camera 2 recording"""
-        filename = f"camera2_{timestamp}.mp4"
+        filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 with MP4 format
+        # Start rpicam-vid for camera 2 with raw H264
         cmd = [
             "rpicam-vid",
             "--width", "1920", 
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",
             "--output", str(filepath),
             "--timeout", "0",
-            "--nopreview"
+            "--nopreview",
+            "--inline"
         ]
         
         try:
