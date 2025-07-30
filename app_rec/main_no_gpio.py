@@ -92,19 +92,17 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Use the exact command that works for the user
-        cmd = f"rpicam-vid -t 0 --camera 1 --output {filepath}"
+        # Try using rpicam-vid with background execution
+        cmd = f"nohup rpicam-vid --camera 1 --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview > /dev/null 2>&1 &"
         
         try:
-            # Capture stderr to see any errors
-            self.camera1_process = subprocess.Popen(
-                cmd, 
-                shell=True, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE
-            )
-            print(f"Camera 1 recording started: {filename}")
-            print(f"Command: {cmd}")
+            # Execute the command in background
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"Camera 1 recording started: {filename}")
+                print(f"Command: {cmd}")
+            else:
+                print(f"Camera 1 failed to start: {result.stderr}")
         except Exception as e:
             print(f"Error starting camera 1: {e}")
     
@@ -113,19 +111,17 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Use the exact command that works for the user
-        cmd = f"rpicam-vid -t 0 --output {filepath}"
+        # Try using rpicam-vid with background execution
+        cmd = f"nohup rpicam-vid --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview > /dev/null 2>&1 &"
         
         try:
-            # Capture stderr to see any errors
-            self.camera2_process = subprocess.Popen(
-                cmd, 
-                shell=True, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE
-            )
-            print(f"Camera 2 recording started: {filename}")
-            print(f"Command: {cmd}")
+            # Execute the command in background
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"Camera 2 recording started: {filename}")
+                print(f"Command: {cmd}")
+            else:
+                print(f"Camera 2 failed to start: {result.stderr}")
         except Exception as e:
             print(f"Error starting camera 2: {e}")
     
