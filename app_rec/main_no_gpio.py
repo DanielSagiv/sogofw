@@ -92,15 +92,18 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with minimal parameters
+        # Start rpicam-vid for camera 1 with proper parameters
         cmd = [
             "rpicam-vid", 
             "--camera", "1",
             "--width", "1920",
             "--height", "1080",
             "--framerate", "30",
+            "--codec", "h264",
             "--output", str(filepath),
-            "--timeout", "0"
+            "--timeout", "0",
+            "--nopreview",
+            "--inline"
         ]
         
         try:
@@ -114,14 +117,17 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 with minimal parameters
+        # Start rpicam-vid for camera 2 with proper parameters
         cmd = [
             "rpicam-vid",
             "--width", "1920", 
             "--height", "1080",
             "--framerate", "30",
+            "--codec", "h264",
             "--output", str(filepath),
-            "--timeout", "0"
+            "--timeout", "0",
+            "--nopreview",
+            "--inline"
         ]
         
         try:
