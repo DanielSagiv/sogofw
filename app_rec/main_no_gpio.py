@@ -99,7 +99,7 @@ class MultiCameraRecorder:
             "--width", "1920",
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "MJPG",  # Use MJPG codec for AVI
+            "--codec", "mjpeg",  # Use mjpeg codec for AVI
             "--output", str(filepath),
             "--timeout", "0",  # Run indefinitely
             "--inline",  # Reduce latency
@@ -123,7 +123,7 @@ class MultiCameraRecorder:
             "--width", "1920", 
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "MJPG",  # Use MJPG codec for AVI
+            "--codec", "mjpeg",  # Use mjpeg codec for AVI
             "--output", str(filepath),
             "--timeout", "0",  # Run indefinitely
             "--inline",  # Reduce latency
