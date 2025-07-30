@@ -151,3 +151,4 @@ python3 -c "import depthai as dai; print('DepthAI available')"
 - `gpiozero` - GPIO control (main version)
 - `RPi.GPIO` - GPIO control (alternative version)
 - `numpy` - Numerical processing 
+//
