@@ -5,14 +5,15 @@
 CC := gcc 
 #SYSROOT := --sysroot=/home/khadas/buildroot/aarch64-buildroot-linux-gnu/sysroot
 
-CFLAGS := -g -lm #-lpthread -Wall 
+CFLAGS := -g -lm -lpthread -Wall 
 CFLAGS += `pkg-config --cflags --libs glib-2.0` -L lib64/ -I imu/ -I gps/ -I camera/ -I input/
 
 OBJS := \
   app/app_main.o \
 	gps/gps.o \
 	imu/camera_imu.o \
-	input/ble_button.o
+	input/ble_button.o \
+	input/rpi_button.o
 
 all: app_demo
 

@@ -16,9 +16,16 @@
 #include "camera_imu.h"
 #include "camera.h"
 #include "ble_button.h"
+#include "rpi_button.h"
 
 #define BTN_PRESS_THRESHOLD      500
 #define BTN_PRESS_DURATION_SHORT 2    // sec
+
+#ifdef __linux__
+#define BTN_TOUCH 0x14a
+#else
+#define BTN_TOUCH 0x1d  // Default value for non-Linux systems
+#endif
 
 // Function declarations
 void get_time(char *time_buf);
@@ -50,45 +57,54 @@ void get_time(char *time_buf) {
 }
 
 void led_green_show(bool onoff) {
+    // Use Raspberry Pi GPIO for LED control
+    static bool led_initialized = false;
+    
+    if (!led_initialized) {
+        // Initialize GPIO for LED (using GPIO 17 as example)
+        system("echo 17 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
+        system("echo out | sudo tee /sys/class/gpio/gpio17/direction > /dev/null 2>&1");
+        led_initialized = true;
+    }
+    
     if (onoff) {
-        system("echo 1 | sudo tee /sys/class/gpio/gpio111/value");
+        system("echo 1 | sudo tee /sys/class/gpio/gpio17/value > /dev/null 2>&1");
     } else {
-        system("echo 0 | sudo tee /sys/class/gpio/gpio111/value");
+        system("echo 0 | sudo tee /sys/class/gpio/gpio17/value > /dev/null 2>&1");
     }
 }
 
 void led_strip_show(bool onoff) {
+    // Use Raspberry Pi GPIO for LED strip control
+    static bool led_strip_initialized = false;
+    
+    if (!led_strip_initialized) {
+        // Initialize GPIO for LED strip (using GPIO 27 as example)
+        system("echo 27 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
+        system("echo out | sudo tee /sys/class/gpio/gpio27/direction > /dev/null 2>&1");
+        led_strip_initialized = true;
+    }
+    
     if (onoff) {
-        system("echo 0 | sudo tee /sys/class/pwm/pwmchip2/export");
-        system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/period");
-        system("echo 000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/duty_cycle");
-        system("echo 1 | sudo tee /sys/class/pwm/pwmchip2/pwm0/enable");
+        system("echo 1 | sudo tee /sys/class/gpio/gpio27/value > /dev/null 2>&1");
     } else {
-        system("echo 0 | sudo tee /sys/class/pwm/pwmchip2/export");
-        system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/period");
-        system("echo 1000000 | sudo tee /sys/class/pwm/pwmchip2/pwm0/duty_cycle");
-        system("echo 1 | sudo tee /sys/class/pwm/pwmchip2/pwm0/enable");
+        system("echo 0 | sudo tee /sys/class/gpio/gpio27/value > /dev/null 2>&1");
     }
 }
 
 int get_adc_button(void) {
-    FILE *file;
-    int adc_value = -1;
+    // Use Raspberry Pi GPIO button instead of ADC
+    static bool rpi_button_initialized = false;
     
-    file = fopen("/sys/bus/iio/devices/iio:device0/in_voltage4_raw", "r");
-    if (file == NULL) {
-        printf("[%s]:[%d] open adc file error\r\n", __FUNCTION__, __LINE__);
-        return -1;
+    if (!rpi_button_initialized) {
+        if (rpi_button_init() != 0) {
+            printf("[get_adc_button]:[%d] Raspberry Pi button initialization failed\n", __LINE__);
+            return -1;
+        }
+        rpi_button_initialized = true;
     }
     
-    if (fscanf(file, "%d", &adc_value) != 1) {
-        printf("[%s]:[%d] open adc file error\r\n", __FUNCTION__, __LINE__);
-        fclose(file);
-        return -1;    
-    }
-    
-    fclose(file);
-    return adc_value;
+    return rpi_button_is_pressed() ? 0 : 1000; // Return 0 if pressed, 1000 if not pressed
 }
 
 void set_recording_state(bool state) {
@@ -113,14 +129,9 @@ bool get_recording_state() {
 }
 
 void *ble_button_thread(void *arg) {
-    int btn_val;
+    // BLE button disabled - not needed for Raspberry Pi
     while (1) {
-        btn_val = get_ble_button();
-        if (btn_val == BTN_TOUCH || btn_val == 0x1d) {
-            set_recording_state(!get_recording_state());
-            usleep(500000);  // 500ms debounce
-        }
-        usleep(100000);  // 100ms polling interval
+        usleep(1000000);  // Sleep for 1 second
     }
     return NULL;
 }
@@ -186,7 +197,7 @@ void start_camera_recording() {
     get_time(time_buf);
     char command[256];
     snprintf(command, sizeof(command), 
-        "python3.11 /home/khadas/prog/app_demo/camera/cam_skel-record.py %s --action start &",
+        "python3.11 ./camera/cam_skel-record.py %s --action start &",
         time_buf);
     system(command);
     printf("Recording started.\n");
