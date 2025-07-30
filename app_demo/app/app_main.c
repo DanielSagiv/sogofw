@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
     
     led_green_show(false);
     initialize_camera_system();
-    camera_imu_start();
+    // camera_imu_start();  // Disabled - handled by combined camera/IMU script
     gps_port = gps_open();
     led_strip_show(true);
     get_time(time_buf);
@@ -293,11 +293,12 @@ int main(int argc, char *argv[]) {
                 }
                 usleep(300 * 1000);
 
-                ret = camera_imu_get_data(imu_data, sizeof(imu_data));
-                if (ret > 0) {
-                    ret = write(imu_fd, imu_data, ret);
-                    printf("Imu:%d ", ret);
-                }
+                // IMU data handled by combined camera/IMU script
+                // ret = camera_imu_get_data(imu_data, sizeof(imu_data));
+                // if (ret > 0) {
+                //     ret = write(imu_fd, imu_data, ret);
+                //     printf("Imu:%d ", ret);
+                // }
 
                 usleep(100 * 1000);
             }
