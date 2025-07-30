@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-import cv2
 import depthai as dai
 import time
 import json
 import sys
 
-def test_camera_imu():
-    print("Testing camera and IMU functionality...")
+def test_camera_imu_headless():
+    print("Testing camera and IMU functionality (headless mode)...")
     
     # Create pipeline
     pipeline = dai.Pipeline()
@@ -22,7 +21,7 @@ def test_camera_imu():
     
     # Properties
     camRgb.setPreviewSize(300, 300)
-    camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)  # Updated from RGB
+    camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
     camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     camRgb.setInterleaved(False)
     camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
@@ -53,19 +52,19 @@ def test_camera_imu():
             counter = 0
             fps = 0
             
+            print("Starting data collection (press Ctrl+C to stop)...")
+            
             while True:
                 inRgb = qRgb.tryGet()
                 inImu = qImu.tryGet()
                 
                 if inRgb is not None:
                     frame = inRgb.getCvFrame()
-                    # Use FONT_HERSHEY_SIMPLEX instead of FONT_HERSHEY_TRIPLET
-                    cv2.putText(frame, "NN fps: {:.2f}".format(fps), (2, frame.shape[0] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0))
-                    cv2.imshow("rgb", frame)
                     counter += 1
                     current_time = time.monotonic()
                     if (current_time - startTime) > 1:
                         fps = counter / (current_time - startTime)
+                        print(f"Camera FPS: {fps:.2f}")
                         counter = 0
                         startTime = current_time
                 
@@ -102,22 +101,21 @@ def test_camera_imu():
                                 'j': rvValues.j,
                                 'k': rvValues.k,
                                 'real': rvValues.real,
-                                'accuracy': float(rvValues.accuracy),  # Convert to float for JSON serialization
+                                'accuracy': float(rvValues.accuracy),
                                 'timestamp': time.time()
                             }
                         
                         if data:
                             print(json.dumps(data))
-                
-                if cv2.waitKey(1) == ord('q'):
-                    break
                     
+    except KeyboardInterrupt:
+        print("\nTest stopped by user")
+        return True
     except Exception as e:
         print(f"Error: {e}")
         return False
     
-    cv2.destroyAllWindows()
     return True
 
 if __name__ == "__main__":
-    test_camera_imu() 
+    test_camera_imu_headless() 
