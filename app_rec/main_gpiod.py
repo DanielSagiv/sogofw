@@ -246,8 +246,8 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with minimal parameters
-        cmd = f"rpicam-vid --camera 1 --output {filepath} --timeout 0"
+        # Use the exact command that works for the user
+        cmd = f"rpicam-vid -t 0 --camera 1 --output {filepath}"
         
         try:
             # Capture stderr to see any errors
@@ -267,8 +267,8 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 with minimal parameters
-        cmd = f"rpicam-vid --output {filepath} --timeout 0"
+        # Use the exact command that works for the user
+        cmd = f"rpicam-vid -t 0 --output {filepath}"
         
         try:
             # Capture stderr to see any errors
