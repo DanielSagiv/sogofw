@@ -22,7 +22,7 @@ def test_camera_imu():
     
     # Properties
     camRgb.setPreviewSize(300, 300)
-    camRgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+    camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)  # Updated from RGB
     camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     camRgb.setInterleaved(False)
     camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
@@ -59,7 +59,8 @@ def test_camera_imu():
                 
                 if inRgb is not None:
                     frame = inRgb.getCvFrame()
-                    cv2.putText(frame, "NN fps: {:.2f}".format(fps), (2, frame.shape[0] - 4), cv2.FONT_HERSHEY_TRIPLET, 0.4, (0, 255, 0))
+                    # Use FONT_HERSHEY_SIMPLEX instead of FONT_HERSHEY_TRIPLET
+                    cv2.putText(frame, "NN fps: {:.2f}".format(fps), (2, frame.shape[0] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0))
                     cv2.imshow("rgb", frame)
                     counter += 1
                     current_time = time.monotonic()
