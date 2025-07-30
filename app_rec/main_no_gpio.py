@@ -92,17 +92,29 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Try using rpicam-vid with background execution
-        cmd = f"nohup rpicam-vid --camera 1 --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview > /dev/null 2>&1 &"
+        # Use the exact working command with simpler approach
+        cmd = f"rpicam-vid -t 0 --camera 1 --output {filepath}"
         
         try:
-            # Execute the command in background
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"Camera 1 recording started: {filename}")
-                print(f"Command: {cmd}")
+            print(f"Starting Camera 1 with command: {cmd}")
+            print(f"Output file: {filepath}")
+            
+            # Start the process
+            self.camera1_process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
+            
+            # Check if process started successfully
+            if self.camera1_process.poll() is None:
+                print(f"Camera 1 recording started successfully: {filename}")
             else:
-                print(f"Camera 1 failed to start: {result.stderr}")
+                stdout, stderr = self.camera1_process.communicate()
+                print(f"Camera 1 failed to start. stdout: {stdout.decode()}")
+                print(f"Camera 1 failed to start. stderr: {stderr.decode()}")
+                
         except Exception as e:
             print(f"Error starting camera 1: {e}")
     
@@ -111,17 +123,29 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Try using rpicam-vid with background execution
-        cmd = f"nohup rpicam-vid --width 1920 --height 1080 --framerate 30 --output {filepath} --timeout 0 --nopreview > /dev/null 2>&1 &"
+        # Use the exact working command with simpler approach
+        cmd = f"rpicam-vid -t 0 --output {filepath}"
         
         try:
-            # Execute the command in background
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"Camera 2 recording started: {filename}")
-                print(f"Command: {cmd}")
+            print(f"Starting Camera 2 with command: {cmd}")
+            print(f"Output file: {filepath}")
+            
+            # Start the process
+            self.camera2_process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
+            
+            # Check if process started successfully
+            if self.camera2_process.poll() is None:
+                print(f"Camera 2 recording started successfully: {filename}")
             else:
-                print(f"Camera 2 failed to start: {result.stderr}")
+                stdout, stderr = self.camera2_process.communicate()
+                print(f"Camera 2 failed to start. stdout: {stdout.decode()}")
+                print(f"Camera 2 failed to start. stderr: {stderr.decode()}")
+                
         except Exception as e:
             print(f"Error starting camera 2: {e}")
     
