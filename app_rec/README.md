@@ -52,8 +52,8 @@ A Python-based multi-camera recording system with IMU data collection for Raspbe
    ```
 
 2. **Press button to start recording** - Creates 5 files:
-   - `camera1_YYYYMMDD_HHMMSS.h264` - RPi camera 1 video
-   - `camera2_YYYYMMDD_HHMMSS.h264` - RPi camera 2 video  
+   - `camera1_YYYYMMDD_HHMMSS.avi` - RPi camera 1 video
+   - `camera2_YYYYMMDD_HHMMSS.avi` - RPi camera 2 video  
    - `camera3_YYYYMMDD_HHMMSS.avi` - DepthAI camera video
    - `imu_vector_YYYYMMDD_HHMMSS.json` - IMU rotation vector data
    - `gyroscope_YYYYMMDD_HHMMSS.json` - Gyroscope data
@@ -151,4 +151,3 @@ python3 -c "import depthai as dai; print('DepthAI available')"
 - `gpiozero` - GPIO control (main version)
 - `RPi.GPIO` - GPIO control (alternative version)
 - `numpy` - Numerical processing 
-//

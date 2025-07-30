@@ -89,19 +89,21 @@ class MultiCameraRecorder:
     
     def start_camera1_recording(self, timestamp):
         """Start RPi camera 1 recording"""
-        filename = f"camera1_{timestamp}.h264"
+        filename = f"camera1_{timestamp}.avi"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1
+        # Start rpicam-vid for camera 1 with AVI format
         cmd = [
             "rpicam-vid", 
             "--camera", "1",
             "--width", "1920",
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",
+            "--codec", "MJPG",  # Use MJPG codec for AVI
             "--output", str(filepath),
-            "--timeout", "0"  # Run indefinitely
+            "--timeout", "0",  # Run indefinitely
+            "--inline",  # Reduce latency
+            "--nopreview"  # No preview window
         ]
         
         try:
@@ -112,18 +114,20 @@ class MultiCameraRecorder:
     
     def start_camera2_recording(self, timestamp):
         """Start RPi camera 2 recording"""
-        filename = f"camera2_{timestamp}.h264"
+        filename = f"camera2_{timestamp}.avi"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 (default camera)
+        # Start rpicam-vid for camera 2 (default camera) with AVI format
         cmd = [
             "rpicam-vid",
             "--width", "1920", 
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",
+            "--codec", "MJPG",  # Use MJPG codec for AVI
             "--output", str(filepath),
-            "--timeout", "0"  # Run indefinitely
+            "--timeout", "0",  # Run indefinitely
+            "--inline",  # Reduce latency
+            "--nopreview"  # No preview window
         ]
         
         try:
