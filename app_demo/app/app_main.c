@@ -191,14 +191,14 @@ void initialize_camera_system() {
 
 void start_camera_recording() {
     // Kill any existing instances first
-    system("pkill -f simple_record.py");
+    system("pkill -f combined_camera_imu.py");
     usleep(200000);  // Wait for cleanup
     
     char time_buf[30];
     get_time(time_buf);
     char command[256];
     snprintf(command, sizeof(command), 
-        "/home/sagiv/oak-env/bin/python3 ./camera/simple_record.py %s --action start &",
+        "/home/sagiv/oak-env/bin/python3 ./camera/combined_camera_imu.py %s --action start &",
         time_buf);
     printf("Executing command: %s\n", command);
     system(command);
@@ -206,7 +206,7 @@ void start_camera_recording() {
 }
 
 void stop_camera_recording() {
-    system("pkill -f simple_record.py");
+    system("pkill -f combined_camera_imu.py");
     usleep(200000);  // 200ms delay
     printf("Recording stopped.\n");
 }
@@ -259,11 +259,14 @@ int main(int argc, char *argv[]) {
     }
     pthread_detach(ble_tid);
 
+    // IMU thread disabled - handled by combined camera/IMU script
+    /*
     if (pthread_create(&imu_tid, NULL, imu_acc_thread, NULL)) {
         printf("Create IMU pthread failed\n");
         return -1;
     }
     pthread_detach(imu_tid);
+    */
 
     if (pthread_create(&adc_tid, NULL, adc_button_thread, NULL)) {
         printf("Create ADC pthread failed\n");
