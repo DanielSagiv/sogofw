@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Multi-Camera Recording System with IMU Data Collection (gpiod version)
-Integrates: Button control, 3 cameras (2 RPi cameras + 1 DepthAI), IMU data
-Uses gpiod library for Raspberry Pi 5 compatibility
+Multi-Camera Recording System with IMU Data Collection (No GPIO version)
+Integrates: 3 cameras (2 RPi cameras + 1 DepthAI), IMU data
+No GPIO - for testing camera and IMU functionality
 """
 
 import cv2
@@ -15,7 +15,6 @@ import threading
 import subprocess
 import signal
 import sys
-import gpiod
 from pathlib import Path
 
 class MultiCameraRecorder:
@@ -23,18 +22,6 @@ class MultiCameraRecorder:
         self.recording = False
         self.recording_threads = []
         self.stop_recording_event = threading.Event()
-        
-        # GPIO setup
-        self.BUTTON_PIN = 17
-        self.LED_PIN = 27
-        
-        # GPIO objects
-        self.chip = None
-        self.button_line = None
-        self.led_line = None
-        
-        # Setup GPIO using gpiod
-        self.setup_gpio()
         
         # Recording paths
         self.recordings_dir = Path("recordings")
@@ -52,138 +39,9 @@ class MultiCameraRecorder:
         self.camera2_file = None
         self.camera3_file = None
         
-        # Button state tracking
-        self.last_button_state = 1  # 1 = not pressed (pull-up)
-        self.button_pressed = False
-        
-        print("Multi-Camera Recording System Initialized")
-        print("Press button to start/stop recording")
-    
-    def setup_gpio(self):
-        """Setup GPIO with proper error handling"""
-        try:
-            # Clean up any existing GPIO usage
-            self.cleanup_gpio()
-            
-            # Setup GPIO using gpiod
-            self.chip = gpiod.Chip('gpiochip0')
-            self.button_line = self.chip.get_line(self.BUTTON_PIN)
-            self.led_line = self.chip.get_line(self.LED_PIN)
-            
-            # Configure button as input with pull-up
-            self.button_line.request(consumer="button", type=gpiod.LINE_REQ_DIR_IN, flags=gpiod.LINE_REQ_FLAG_BIAS_PULL_UP)
-            
-            # Configure LED as output
-            self.led_line.request(consumer="led", type=gpiod.LINE_REQ_DIR_OUT)
-            self.led_line.set_value(0)  # LED off initially
-            
-            print("✅ GPIO setup successful using gpiod")
-            
-        except Exception as e:
-            print(f"❌ GPIO setup failed: {e}")
-            print("Trying alternative GPIO setup...")
-            self.setup_gpio_alternative()
-    
-    def cleanup_gpio(self):
-        """Clean up GPIO resources"""
-        try:
-            if self.chip:
-                self.chip.close()
-                self.chip = None
-                self.button_line = None
-                self.led_line = None
-        except:
-            pass
-        
-        # Also try to release GPIO pins via system
-        try:
-            os.system(f"echo {self.BUTTON_PIN} > /sys/class/gpio/unexport 2>/dev/null")
-            os.system(f"echo {self.LED_PIN} > /sys/class/gpio/unexport 2>/dev/null")
-        except:
-            pass
-    
-    def setup_gpio_alternative(self):
-        """Alternative GPIO setup using system commands"""
-        try:
-            # Clean up first
-            os.system(f"echo {self.BUTTON_PIN} > /sys/class/gpio/unexport 2>/dev/null")
-            os.system(f"echo {self.LED_PIN} > /sys/class/gpio/unexport 2>/dev/null")
-            time.sleep(0.1)
-            
-            # Export GPIO pins
-            os.system(f"echo {self.BUTTON_PIN} > /sys/class/gpio/export")
-            os.system(f"echo {self.LED_PIN} > /sys/class/gpio/export")
-            
-            # Set directions
-            os.system(f"echo in > /sys/class/gpio/gpio{self.BUTTON_PIN}/direction")
-            os.system(f"echo out > /sys/class/gpio/gpio{self.LED_PIN}/direction")
-            
-            # Set pull-up for button
-            os.system(f"echo pullup > /sys/class/gpio/gpio{self.BUTTON_PIN}/direction")
-            
-            print("✅ Alternative GPIO setup successful")
-            
-        except Exception as e:
-            print(f"❌ Alternative GPIO setup failed: {e}")
-            print("Continuing without GPIO...")
-    
-    def read_button_gpiod(self):
-        """Read button state using gpiod"""
-        try:
-            if self.button_line:
-                return self.button_line.get_value()
-            else:
-                return 1  # Default to not pressed
-        except:
-            return 1  # Default to not pressed
-    
-    def read_button_alternative(self):
-        """Read button state using system files"""
-        try:
-            with open(f"/sys/class/gpio/gpio{self.BUTTON_PIN}/value", "r") as f:
-                return int(f.read().strip())
-        except:
-            return 1  # Default to not pressed
-    
-    def set_led_gpiod(self, state):
-        """Set LED state using gpiod"""
-        try:
-            if self.led_line:
-                self.led_line.set_value(1 if state else 0)
-        except:
-            pass
-    
-    def set_led_alternative(self, state):
-        """Set LED state using system files"""
-        try:
-            with open(f"/sys/class/gpio/gpio{self.LED_PIN}/value", "w") as f:
-                f.write("1" if state else "0")
-        except:
-            pass
-    
-    def check_button(self):
-        """Check button state and handle press"""
-        try:
-            # Try gpiod first
-            current_state = self.read_button_gpiod()
-        except:
-            # Fallback to system files
-            current_state = self.read_button_alternative()
-        
-        # Button is pressed when state is 0 (due to pull-up)
-        if current_state == 0 and self.last_button_state == 1:
-            # Button just pressed
-            self.button_pressed = True
-            print("Button pressed!")
-            
-            # Toggle recording
-            if not self.recording:
-                self.start_recording()
-            else:
-                self.stop_recording()
-        
-        self.last_button_state = current_state
-        return self.button_pressed
+        print("Multi-Camera Recording System Initialized (No GPIO)")
+        print("Press Enter to start/stop recording")
+        print("Press Ctrl+C to exit")
     
     def get_timestamp(self):
         """Get current timestamp for filenames"""
@@ -197,12 +55,6 @@ class MultiCameraRecorder:
             
         print("Starting recording...")
         self.recording = True
-        
-        # Turn on LED
-        try:
-            self.set_led_gpiod(True)
-        except:
-            self.set_led_alternative(True)
         
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
@@ -226,12 +78,6 @@ class MultiCameraRecorder:
             
         print("Stopping recording...")
         self.recording = False
-        
-        # Turn off LED
-        try:
-            self.set_led_gpiod(False)
-        except:
-            self.set_led_alternative(False)
         
         # Stop camera processes
         self.stop_camera_processes()
@@ -458,28 +304,26 @@ class MultiCameraRecorder:
         if self.recording:
             self.stop_recording()
         
-        # Turn off LED
-        try:
-            self.set_led_gpiod(False)
-        except:
-            self.set_led_alternative(False)
-        
-        # Cleanup gpiod
-        self.cleanup_gpio()
-        
         print("Cleanup completed")
     
     def run(self):
         """Main run loop"""
         try:
-            print("Multi-Camera Recording System Ready")
-            print("Press button to start/stop recording")
+            print("Multi-Camera Recording System Ready (No GPIO)")
+            print("Press Enter to start/stop recording")
             print("Press Ctrl+C to exit")
             
-            # Keep the main thread alive and check button
+            # Keep the main thread alive and check for Enter key
             while True:
-                self.check_button()
-                time.sleep(0.1)
+                try:
+                    user_input = input()
+                    if user_input.strip() == "":
+                        if not self.recording:
+                            self.start_recording()
+                        else:
+                            self.stop_recording()
+                except EOFError:
+                    time.sleep(0.1)
                 
         except KeyboardInterrupt:
             print("\nShutting down...")
