@@ -246,8 +246,8 @@ class MultiCameraRecorder:
         filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Use the exact working command with simpler approach
-        cmd = f"rpicam-vid -t 0 --camera 1 --output {filepath}"
+        # Try a much simpler command to test if camera works
+        cmd = f"rpicam-vid --camera 1 --output {filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
@@ -277,8 +277,8 @@ class MultiCameraRecorder:
         filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Use the exact working command with simpler approach
-        cmd = f"rpicam-vid -t 0 --output {filepath}"
+        # Try a much simpler command to test if camera works
+        cmd = f"rpicam-vid --output {filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
