@@ -52,8 +52,8 @@ A Python-based multi-camera recording system with IMU data collection for Raspbe
    ```
 
 2. **Press button to start recording** - Creates 5 files:
-   - `camera1_YYYYMMDD_HHMMSS.avi` - RPi camera 1 video
-   - `camera2_YYYYMMDD_HHMMSS.avi` - RPi camera 2 video  
+   - `camera1_YYYYMMDD_HHMMSS.mp4` - RPi camera 1 video
+   - `camera2_YYYYMMDD_HHMMSS.mp4` - RPi camera 2 video  
    - `camera3_YYYYMMDD_HHMMSS.avi` - DepthAI camera video
    - `imu_vector_YYYYMMDD_HHMMSS.json` - IMU rotation vector data
    - `gyroscope_YYYYMMDD_HHMMSS.json` - Gyroscope data
