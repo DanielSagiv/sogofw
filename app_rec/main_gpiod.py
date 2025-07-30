@@ -243,21 +243,22 @@ class MultiCameraRecorder:
     
     def start_camera1_recording(self, timestamp):
         """Start RPi camera 1 recording"""
-        filename = f"camera1_{timestamp}.mp4"
+        filename = f"camera1_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 1 with MP4 format
+        # Start rpicam-vid for camera 1 with H264 format
         cmd = [
             "rpicam-vid", 
             "--camera", "1",
             "--width", "1920",
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",  # Use h264 codec for MP4
+            "--codec", "h264",
             "--output", str(filepath),
-            "--timeout", "0",  # Run indefinitely
-            "--inline",  # Reduce latency
-            "--nopreview"  # No preview window
+            "--timeout", "0",
+            "--inline",
+            "--nopreview",
+            "--segment", "0"  # No segmentation
         ]
         
         try:
@@ -268,20 +269,21 @@ class MultiCameraRecorder:
     
     def start_camera2_recording(self, timestamp):
         """Start RPi camera 2 recording"""
-        filename = f"camera2_{timestamp}.mp4"
+        filename = f"camera2_{timestamp}.h264"
         filepath = self.recordings_dir / filename
         
-        # Start rpicam-vid for camera 2 (default camera) with MP4 format
+        # Start rpicam-vid for camera 2 (default camera) with H264 format
         cmd = [
             "rpicam-vid",
             "--width", "1920", 
             "--height", "1080",
             "--framerate", "30",
-            "--codec", "h264",  # Use h264 codec for MP4
+            "--codec", "h264",
             "--output", str(filepath),
-            "--timeout", "0",  # Run indefinitely
-            "--inline",  # Reduce latency
-            "--nopreview"  # No preview window
+            "--timeout", "0",
+            "--inline",
+            "--nopreview",
+            "--segment", "0"  # No segmentation
         ]
         
         try:
