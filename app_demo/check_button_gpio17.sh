@@ -1,18 +1,16 @@
 #!/bin/bash
 
-CHIP="gpiochip0"
-LINE=17
+echo "📟 Monitoring GPIO 17 on gpiochip0 (Press Ctrl+C to exit)"
 
-echo "📟 Monitoring GPIO $LINE on $CHIP (Press Ctrl+C to exit)"
+# Set GPIO 17 as input with pull-up
+gpioset gpiochip0 17=tri-hi
 
 while true; do
-    val=$(gpioget $CHIP $LINE 2>/dev/null)
-    if [ "$val" = "1" ]; then
+    val=$(gpioget gpiochip0 17 2>/dev/null)
+    if [ "$val" == "0" ]; then
         echo "🔴 Button Pressed"
-    elif [ "$val" = "0" ]; then
-        echo "⚪️ Button Not Pressed"
     else
-        echo "⚠️ GPIO read error or unknown state: '$val'"
+        echo "⚪ Button Not Pressed"
     fi
     sleep 0.3
 done
