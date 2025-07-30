@@ -191,21 +191,22 @@ void initialize_camera_system() {
 
 void start_camera_recording() {
     // Kill any existing instances first
-    system("pkill -f cam_skel-record.py");
+    system("pkill -f simple_record.py");
     usleep(200000);  // Wait for cleanup
     
     char time_buf[30];
     get_time(time_buf);
     char command[256];
     snprintf(command, sizeof(command), 
-        "python3.11 ./camera/cam_skel-record.py %s --action start &",
+        "/home/sagiv/oak-env/bin/python3 ./camera/simple_record.py %s --action start &",
         time_buf);
+    printf("Executing command: %s\n", command);
     system(command);
     printf("Recording started.\n");
 }
 
 void stop_camera_recording() {
-    system("pkill -f cam_skel-record.py");
+    system("pkill -f simple_record.py");
     usleep(200000);  // 200ms delay
     printf("Recording stopped.\n");
 }
