@@ -32,9 +32,9 @@ A Python-based multi-camera recording system with IMU data collection for Raspbe
    source venv/bin/activate
    ```
 
-3. **Test button:**
+3. **Test GPIO:**
    ```bash
-   python -c "from gpiozero import Button, LED; from signal import pause; button = Button(17); led = LED(27); button.when_pressed = led.on; button.when_released = led.off; pause()"
+   python test_gpio.py
    ```
 
 ## Usage
@@ -44,25 +44,69 @@ A Python-based multi-camera recording system with IMU data collection for Raspbe
    python main.py
    ```
 
-2. **Press button to start recording** - Creates 5 files:
+2. **If GPIO doesn't work, try the alternative version:**
+   ```bash
+   python main_alternative.py
+   ```
+
+3. **Press button to start recording** - Creates 5 files:
    - `camera1_YYYYMMDD_HHMMSS.h264` - RPi camera 1 video
    - `camera2_YYYYMMDD_HHMMSS.h264` - RPi camera 2 video  
    - `camera3_YYYYMMDD_HHMMSS.avi` - DepthAI camera video
    - `imu_vector_YYYYMMDD_HHMMSS.json` - IMU rotation vector data
    - `gyroscope_YYYYMMDD_HHMMSS.json` - Gyroscope data
 
-3. **Press button again to stop recording**
+4. **Press button again to stop recording**
 
 ## File Structure
 
 ```
 app_rec/
-├── main.py              # Main application
+├── main.py              # Main application (gpiozero)
+├── main_alternative.py  # Alternative version (RPi.GPIO)
 ├── requirements.txt      # Python dependencies
 ├── setup.sh            # Setup script
 ├── README.md           # This file
+├── test_gpio.py        # GPIO test script
+├── test_components.py  # Component testing script
 ├── venv/               # Virtual environment
 └── recordings/         # Output files directory
+```
+
+## GPIO Troubleshooting
+
+### If you get "BadPinFactory" error:
+
+1. **Try the alternative version:**
+   ```bash
+   python main_alternative.py
+   ```
+
+2. **Run as root (if needed):**
+   ```bash
+   sudo python main.py
+   ```
+
+3. **Test GPIO manually:**
+   ```bash
+   python test_gpio.py
+   ```
+
+4. **Check GPIO permissions:**
+   ```bash
+   groups $USER
+   ls -la /dev/gpiomem
+   ```
+
+5. **Reinstall GPIO libraries:**
+   ```bash
+   pip install --upgrade RPi.GPIO gpiozero
+   ```
+
+### Button not working
+```bash
+# Test button outside virtual environment
+python3 -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); GPIO.setup(17, GPIO.IN); print('Button pin:', GPIO.input(17))"
 ```
 
 ## Advantages over C Version
@@ -76,12 +120,6 @@ app_rec/
 - ✅ **Easier to modify** - More readable and maintainable
 
 ## Troubleshooting
-
-### Button not working
-```bash
-# Test button outside virtual environment
-python3 -c "from gpiozero import Button; button = Button(17); print('Button working')"
-```
 
 ### Camera not found
 ```bash
@@ -100,5 +138,6 @@ python3 -c "import depthai as dai; print('DepthAI available')"
 
 - `opencv-python` - Video processing
 - `depthai` - DepthAI camera interface
-- `gpiozero` - GPIO control
+- `gpiozero` - GPIO control (main version)
+- `RPi.GPIO` - GPIO control (alternative version)
 - `numpy` - Numerical processing 
