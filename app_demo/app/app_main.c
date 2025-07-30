@@ -62,16 +62,16 @@ void led_green_show(bool onoff) {
     static bool led_initialized = false;
     
     if (!led_initialized) {
-        // Initialize GPIO for LED (using GPIO 513 as example)
-        system("echo 513 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
-        system("echo out | sudo tee /sys/class/gpio/gpio513/direction > /dev/null 2>&1");
+        // Initialize GPIO for LED (using GPIO 17 as example)
+        system("echo 17 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
+        system("echo out | sudo tee /sys/class/gpio/gpio17/direction > /dev/null 2>&1");
         led_initialized = true;
     }
     
     if (onoff) {
-        system("echo 1 | sudo tee /sys/class/gpio/gpio513/value > /dev/null 2>&1");
+        system("echo 1 | sudo tee /sys/class/gpio/gpio17/value > /dev/null 2>&1");
     } else {
-        system("echo 0 | sudo tee /sys/class/gpio/gpio513/value > /dev/null 2>&1");
+        system("echo 0 | sudo tee /sys/class/gpio/gpio17/value > /dev/null 2>&1");
     }
 }
 
@@ -80,16 +80,16 @@ void led_strip_show(bool onoff) {
     static bool led_strip_initialized = false;
     
     if (!led_strip_initialized) {
-        // Initialize GPIO for LED strip (using GPIO 518 as example)
-        system("echo 518 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
-        system("echo out | sudo tee /sys/class/gpio/gpio518/direction > /dev/null 2>&1");
+        // Initialize GPIO for LED strip (using GPIO 27 as example)
+        system("echo 27 | sudo tee /sys/class/gpio/export > /dev/null 2>&1");
+        system("echo out | sudo tee /sys/class/gpio/gpio27/direction > /dev/null 2>&1");
         led_strip_initialized = true;
     }
     
     if (onoff) {
-        system("echo 1 | sudo tee /sys/class/gpio/gpio518/value > /dev/null 2>&1");
+        system("echo 1 | sudo tee /sys/class/gpio/gpio27/value > /dev/null 2>&1");
     } else {
-        system("echo 0 | sudo tee /sys/class/gpio/gpio518/value > /dev/null 2>&1");
+        system("echo 0 | sudo tee /sys/class/gpio/gpio27/value > /dev/null 2>&1");
     }
 }
 

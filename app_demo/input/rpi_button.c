@@ -12,7 +12,7 @@
 #define GPIO_EXPORT "/sys/class/gpio/export"
 #define GPIO_DIRECTION "/sys/class/gpio/gpio%d/direction"
 #define GPIO_VALUE "/sys/class/gpio/gpio%d/value"
-#define GPIO_PIN 513  // GPIO 513 - one of the working GPIOs from our earlier testing
+#define GPIO_PIN 17  // GPIO 17 - matches your working gpiozero test
 
 static bool gpio_initialized = false;
 
