@@ -12,13 +12,14 @@ def start_camera(camera_id, fifo_path):
     return subprocess.Popen([
         "rpicam-vid",
         "--camera", str(camera_id),
-        "--codec", "h264",        # Explicitly set codec
-        "--output", fifo_path,    # Write to named pipe
-        "--timeout", "0",         # Record until stopped
+        "--codec", "h264",
+        "--libav-format", "h264",  # ✅ <- Critical Fix
+        "--output", fifo_path,
+        "--timeout", "0",
+        "--nopreview",
         "--profile", "high",
         "--bitrate", "4000000",
-        "--level", "4.2",
-        "--nopreview"
+        "--level", "4.2"
     ])
 
 def start_writer(fifo_path, output_path):
@@ -40,11 +41,9 @@ def main():
 
     print("🎥 Starting cameras...")
 
-    # Start streaming from cameras
     cam0_proc = start_camera(0, fifo0)
     cam1_proc = start_camera(1, fifo1)
 
-    # Start writing streams to file
     writer0 = start_writer(fifo0, out0)
     writer1 = start_writer(fifo1, out1)
 
