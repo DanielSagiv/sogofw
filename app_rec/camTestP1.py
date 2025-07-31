@@ -1,38 +1,36 @@
 import subprocess
-import time
 import datetime
+import signal
+import time
 
-def start_recording():
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    cam0_file = f"camera0_{timestamp}.h264"
-    cam1_file = f"camera1_{timestamp}.h264"
-
-    print("Starting recording... Press ENTER again to stop.\n")
-
-    # Start both cameras
-    proc_cam0 = subprocess.Popen([
-        "rpicam-vid", "-t", "0", "--camera", "0", "-o", cam0_file
+def start_recording(camera_id, filename):
+    return subprocess.Popen([
+        "rpicam-vid",
+        "--camera", str(camera_id),
+        "-t", "0",  # unlimited time until manually stopped
+        "-o", filename
     ])
 
-    proc_cam1 = subprocess.Popen([
-        "rpicam-vid", "-t", "0", "--camera", "1", "-o", cam1_file
-    ])
-
-    return proc_cam0, proc_cam1, cam0_file, cam1_file
-
-def stop_recording(proc_cam0, proc_cam1):
-    proc_cam0.terminate()
-    proc_cam1.terminate()
-    proc_cam0.wait()
-    proc_cam1.wait()
-    print("Recording stopped.")
+def stop_recording(proc):
+    proc.send_signal(signal.SIGINT)
+    proc.wait()
 
 def main():
-    input("Press ENTER to start recording...")
-    proc_cam0, proc_cam1, file0, file1 = start_recording()
+    input("Press ENTER to START recording...")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    file0 = f"camera0_{timestamp}.h264"
+    file1 = f"camera1_{timestamp}.h264"
+
+    proc0 = start_recording(0, file0)
+    proc1 = start_recording(1, file1)
+    print("Recording... Press ENTER to STOP.")
     input()
-    stop_recording(proc_cam0, proc_cam1)
-    print(f"Videos saved as:\n - {file0}\n - {file1}")
+    print("Stopping...")
+
+    stop_recording(proc0)
+    stop_recording(proc1)
+
+    print(f"Videos saved:\n - {file0}\n - {file1}")
 
 if __name__ == "__main__":
     main()
