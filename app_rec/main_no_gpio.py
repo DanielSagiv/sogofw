@@ -331,17 +331,23 @@ class MultiCameraRecorder:
                 qImu = device.getOutputQueue(name="imu", maxSize=50, blocking=False)
                 
                 # Create video writer
-                video_filename = f"camera3_{timestamp}.avi"
+                video_filename = f"camera3_{timestamp}.mp4"  # Changed to MP4
                 video_filepath = self.recordings_dir / video_filename
                 
-                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-                out = cv2.VideoWriter(str(video_filepath), fourcc, 20.0, (1920, 1080))
+                # Use more compatible settings
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # MP4 codec
+                fps = 15.0  # Lower, more stable frame rate
+                out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))
                 
                 if not out.isOpened():
                     print("Error: Could not initialize video writer")
                     return
                 
-                print(f"DepthAI video recording: {video_filename}")
+                print(f"DepthAI video recording: {video_filename} at {fps} FPS")
+                
+                # Frame timing for consistent playback
+                frame_interval = 1.0 / fps
+                last_frame_time = time.time()
                 
                 while not self.stop_recording_event.is_set():
                     inRgb = qRgb.tryGet()
@@ -349,6 +355,12 @@ class MultiCameraRecorder:
                     
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
+                        
+                        # Frame rate control
+                        current_time = time.time()
+                        if current_time - last_frame_time < frame_interval:
+                            continue  # Skip frame if too soon
+                        last_frame_time = current_time
                         
                         # Add timestamp
                         timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
