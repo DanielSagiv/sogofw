@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Multi-Camera Recording System with IMU Data Collection (No GPIO version)
-Integrates: 3 cameras (2 RPi cameras + 1 DepthAI), IMU data
+Integrates: 3 cameras (2 RPi cameras + 1 DepthAI), IMU data, Grove LCD RGB
 No GPIO - for testing camera and IMU functionality
 """
 
@@ -16,6 +16,7 @@ import subprocess
 import signal
 import sys
 from pathlib import Path
+from grove_lcd_rgb import set_text, set_rgb
 
 class MultiCameraRecorder:
     def __init__(self):
@@ -39,6 +40,14 @@ class MultiCameraRecorder:
         self.camera2_file = None
         self.camera3_file = None
         
+        # Initialize LCD
+        try:
+            set_rgb(0, 128, 64)  # Green color
+            set_text("SOGO READY")
+            print("LCD initialized successfully")
+        except Exception as e:
+            print(f"LCD initialization failed: {e}")
+        
         print("Multi-Camera Recording System Initialized (No GPIO)")
         print("Press Enter to start/stop recording")
         print("Press Ctrl+C to exit")
@@ -55,6 +64,13 @@ class MultiCameraRecorder:
             
         print("Starting recording...")
         self.recording = True
+        
+        # Update LCD to show recording status
+        try:
+            set_rgb(255, 0, 0)  # Red color for recording
+            set_text("RECORDING")
+        except Exception as e:
+            print(f"LCD update failed: {e}")
         
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
@@ -78,6 +94,13 @@ class MultiCameraRecorder:
             
         print("Stopping recording...")
         self.recording = False
+        
+        # Update LCD to show ready status
+        try:
+            set_rgb(0, 128, 64)  # Green color for ready
+            set_text("SOGO READY")
+        except Exception as e:
+            print(f"LCD update failed: {e}")
         
         # Stop camera processes
         self.stop_camera_processes()
