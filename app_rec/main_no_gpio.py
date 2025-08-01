@@ -338,16 +338,16 @@ class MultiCameraRecorder:
                 
                 # Use AVI with XVID codec for normal speed
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')  # More reliable timing
-                fps = 1.0  # 1 FPS for real-time speed (1 second = 1 second)
+                fps = 15.0  # Normal frame rate for smooth video
                 out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))  # Back to original
                 
                 if not out.isOpened():
                     print("Error: Could not initialize video writer")
                     return
                 
-                print(f"DepthAI video recording: {video_filename} at {fps} FPS (real-time speed)")
+                print(f"DepthAI video recording: {video_filename} at {fps} FPS (smooth video)")
                 
-                # Simple timing for real-time speed
+                # Timing for smooth video
                 frame_interval = 1.0 / fps
                 last_frame_time = time.time()
                 frame_count = 0
@@ -359,11 +359,11 @@ class MultiCameraRecorder:
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
                         
-                        # Simplified frame processing for real-time speed
+                        # Frame processing for smooth video
                         current_time = time.time()
                         time_since_last = current_time - last_frame_time
                         
-                        # Process exactly 1 frame per second
+                        # Process frames at 15 FPS for smooth video
                         if time_since_last >= frame_interval:
                             last_frame_time = current_time
                             frame_count += 1
@@ -373,7 +373,7 @@ class MultiCameraRecorder:
                             cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                             
                             # Add frame counter for debugging
-                            cv2.putText(frame, f"Frame: {frame_count} (1 FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                            cv2.putText(frame, f"Frame: {frame_count} (15 FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
                             
                             # Skeleton detection and processing
                             if self.skeleton_enabled and self.pose_detector:
@@ -404,8 +404,8 @@ class MultiCameraRecorder:
                                 # Write original frame if skeleton is disabled
                                 out.write(frame)
                             
-                            # Sleep to ensure exactly 1 second between frames
-                            time.sleep(0.9)  # Sleep for 0.9 seconds (1 second total with processing)
+                            # Small sleep to maintain timing
+                            time.sleep(0.01)  # 10ms sleep for 15 FPS
                     
                     if inImu is not None:
                         imuPackets = inImu.packets
