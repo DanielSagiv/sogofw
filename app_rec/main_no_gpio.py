@@ -311,6 +311,11 @@ class MultiCameraRecorder:
             camRgb.setInterleaved(False)
             camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
             
+            # Set camera to use full field of view (150 degrees)
+            camRgb.setFps(30)  # Set FPS first
+            camRgb.setIspScale(1, 3)  # Use full sensor width
+            camRgb.setSensorCrop(0, 0)  # No cropping
+            
             # IMU properties
             imu.enableIMUSensor(dai.IMUSensor.ACCELEROMETER_RAW, 500)
             imu.enableIMUSensor(dai.IMUSensor.GYROSCOPE_RAW, 400)
@@ -331,12 +336,12 @@ class MultiCameraRecorder:
                 qImu = device.getOutputQueue(name="imu", maxSize=50, blocking=False)
                 
                 # Create video writer
-                video_filename = f"camera3_{timestamp}.mp4"  # Changed to MP4
+                video_filename = f"camera3_{timestamp}.avi"  # Back to AVI for better timing
                 video_filepath = self.recordings_dir / video_filename
                 
-                # Use more compatible settings
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # MP4 codec
-                fps = 15.0  # Lower, more stable frame rate
+                # Use AVI with XVID codec for better timing control
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')  # More reliable timing
+                fps = 10.0  # Lower frame rate for better timing
                 out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))
                 
                 if not out.isOpened():
@@ -345,9 +350,10 @@ class MultiCameraRecorder:
                 
                 print(f"DepthAI video recording: {video_filename} at {fps} FPS")
                 
-                # Frame timing for consistent playback
+                # Improved frame timing for consistent playback
                 frame_interval = 1.0 / fps
                 last_frame_time = time.time()
+                frame_count = 0
                 
                 while not self.stop_recording_event.is_set():
                     inRgb = qRgb.tryGet()
@@ -356,45 +362,50 @@ class MultiCameraRecorder:
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
                         
-                        # Frame rate control
+                        # Improved frame rate control
                         current_time = time.time()
-                        if current_time - last_frame_time < frame_interval:
-                            continue  # Skip frame if too soon
-                        last_frame_time = current_time
+                        time_since_last = current_time - last_frame_time
                         
-                        # Add timestamp
-                        timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                        
-                        # Skeleton detection and processing
-                        if self.skeleton_enabled and self.pose_detector:
-                            try:
-                                # Convert BGR to RGB for MediaPipe
-                                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                
-                                # Create MediaPipe image
-                                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-                                
-                                # Detect pose landmarks
-                                detection_result = self.pose_detector.detect(mp_image)
-                                
-                                # Draw landmarks on frame
-                                frame_with_skeleton = self.draw_landmarks_on_frame(frame, detection_result)
-                                
-                                # Process and save skeleton data
-                                current_time = time.time()
-                                self.process_skeleton_data(detection_result, current_time)
-                                
-                                # Write frame with skeleton overlay
-                                out.write(frame_with_skeleton)
-                                
-                            except Exception as e:
-                                print(f"Error in skeleton processing: {e}")
-                                # Fallback to original frame
+                        # Only process frame if enough time has passed
+                        if time_since_last >= frame_interval:
+                            last_frame_time = current_time
+                            frame_count += 1
+                            
+                            # Add timestamp
+                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                            
+                            # Add frame counter for debugging
+                            cv2.putText(frame, f"Frame: {frame_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                            
+                            # Skeleton detection and processing
+                            if self.skeleton_enabled and self.pose_detector:
+                                try:
+                                    # Convert BGR to RGB for MediaPipe
+                                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    
+                                    # Create MediaPipe image
+                                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                                    
+                                    # Detect pose landmarks
+                                    detection_result = self.pose_detector.detect(mp_image)
+                                    
+                                    # Draw landmarks on frame
+                                    frame_with_skeleton = self.draw_landmarks_on_frame(frame, detection_result)
+                                    
+                                    # Process and save skeleton data
+                                    self.process_skeleton_data(detection_result, current_time)
+                                    
+                                    # Write frame with skeleton overlay
+                                    out.write(frame_with_skeleton)
+                                    
+                                except Exception as e:
+                                    print(f"Error in skeleton processing: {e}")
+                                    # Fallback to original frame
+                                    out.write(frame)
+                            else:
+                                # Write original frame if skeleton is disabled
                                 out.write(frame)
-                        else:
-                            # Write original frame if skeleton is disabled
-                            out.write(frame)
                     
                     if inImu is not None:
                         imuPackets = inImu.packets
