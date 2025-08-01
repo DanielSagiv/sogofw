@@ -304,17 +304,14 @@ class MultiCameraRecorder:
             xlinkOut.setStreamName("rgb")
             imuXlinkOut.setStreamName("imu")
             
-            # Camera properties - use compatible settings
-            camRgb.setPreviewSize(640, 360)  # Standard resolution
+            # Camera properties - revert to working settings
+            camRgb.setPreviewSize(1920, 1080)  # Back to original
             camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_400_P)  # Most compatible
+            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)  # Back to original
             camRgb.setInterleaved(False)
             camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
             
-            # Set camera to use full field of view
-            camRgb.setFps(30)  # Set FPS first
-            camRgb.setIspScale(1, 1)  # Use full sensor width
-            camRgb.setSensorCrop(0, 0)  # No cropping
+            # Remove problematic settings - keep it simple
             
             # IMU properties
             imu.enableIMUSensor(dai.IMUSensor.ACCELEROMETER_RAW, 500)
@@ -342,7 +339,7 @@ class MultiCameraRecorder:
                 # Use AVI with XVID codec for better timing control
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')  # More reliable timing
                 fps = 10.0  # Lower frame rate for better timing
-                out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (640, 360))  # Match camera resolution
+                out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))  # Back to original
                 
                 if not out.isOpened():
                     print("Error: Could not initialize video writer")
@@ -362,11 +359,11 @@ class MultiCameraRecorder:
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
                         
-                        # Improved frame rate control
+                        # Simplified frame processing
                         current_time = time.time()
                         time_since_last = current_time - last_frame_time
                         
-                        # Only process frame if enough time has passed
+                        # Process frame at correct interval
                         if time_since_last >= frame_interval:
                             last_frame_time = current_time
                             frame_count += 1
