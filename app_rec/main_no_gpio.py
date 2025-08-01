@@ -304,16 +304,16 @@ class MultiCameraRecorder:
             xlinkOut.setStreamName("rgb")
             imuXlinkOut.setStreamName("imu")
             
-            # Camera properties
-            camRgb.setPreviewSize(1920, 1080)
+            # Camera properties - use compatible settings
+            camRgb.setPreviewSize(640, 360)  # Standard resolution
             camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_400_P)  # Most compatible
             camRgb.setInterleaved(False)
             camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
             
-            # Set camera to use full field of view (150 degrees)
+            # Set camera to use full field of view
             camRgb.setFps(30)  # Set FPS first
-            camRgb.setIspScale(1, 3)  # Use full sensor width
+            camRgb.setIspScale(1, 1)  # Use full sensor width
             camRgb.setSensorCrop(0, 0)  # No cropping
             
             # IMU properties
@@ -342,7 +342,7 @@ class MultiCameraRecorder:
                 # Use AVI with XVID codec for better timing control
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')  # More reliable timing
                 fps = 10.0  # Lower frame rate for better timing
-                out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))
+                out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (640, 360))  # Match camera resolution
                 
                 if not out.isOpened():
                     print("Error: Could not initialize video writer")
