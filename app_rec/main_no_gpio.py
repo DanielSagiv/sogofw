@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Multi-Camera Recording System with IMU Data Collection (No GPIO version)
-Integrates: 3 cameras (2 RPi cameras + 1 DepthAI), IMU data, Grove LCD RGB
+Multi-Camera Recording System with IMU Data Collection and Skeleton Recognition (No GPIO version)
+Integrates: 3 cameras (2 RPi cameras + 1 DepthAI), IMU data, Grove LCD RGB, Skeleton Recognition
 No GPIO - for testing camera and IMU functionality
 """
 
@@ -17,6 +17,16 @@ import signal
 import sys
 from pathlib import Path
 from grove_lcd_rgb import set_text, set_rgb
+
+# MediaPipe imports for skeleton recognition
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+from mediapipe.framework.formats import landmark_pb2
+from mediapipe import solutions
+
+# Suppress TensorFlow warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 class MultiCameraRecorder:
     def __init__(self):
@@ -36,9 +46,17 @@ class MultiCameraRecorder:
         # File handles
         self.imu_file = None
         self.gyro_file = None
+        self.skeleton_file = None
         self.camera1_file = None
         self.camera2_file = None
         self.camera3_file = None
+        
+        # Skeleton recognition
+        self.pose_detector = None
+        self.skeleton_enabled = True  # Toggle for skeleton detection
+        
+        # Initialize skeleton recognition
+        self.initialize_pose_detector()
         
         # Initialize LCD
         try:
@@ -55,6 +73,80 @@ class MultiCameraRecorder:
     def get_timestamp(self):
         """Get current timestamp for filenames"""
         return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    def initialize_pose_detector(self):
+        """Initialize MediaPipe pose detector"""
+        try:
+            # Use lite model for better performance
+            model_path = Path(__file__).parent / "models" / "pose_landmarker_lite.task"
+            if not model_path.exists():
+                print(f"Warning: Skeleton model not found at {model_path}")
+                self.skeleton_enabled = False
+                return
+            
+            base_options = python.BaseOptions(model_asset_path=str(model_path))
+            options = vision.PoseLandmarkerOptions(
+                base_options=base_options,
+                output_segmentation_masks=False  # Disable for better performance
+            )
+            self.pose_detector = vision.PoseLandmarker.create_from_options(options)
+            print("Skeleton recognition initialized successfully")
+            
+        except Exception as e:
+            print(f"Error initializing skeleton recognition: {e}")
+            self.skeleton_enabled = False
+    
+    def draw_landmarks_on_frame(self, frame, detection_result):
+        """Draw skeleton landmarks on frame"""
+        if not self.skeleton_enabled or not detection_result.pose_landmarks:
+            return frame
+        
+        annotated_frame = frame.copy()
+        
+        for pose_landmarks in detection_result.pose_landmarks:
+            pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            pose_landmarks_proto.landmark.extend(
+                [landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) 
+                 for landmark in pose_landmarks]
+            )
+            solutions.drawing_utils.draw_landmarks(
+                annotated_frame,
+                pose_landmarks_proto,
+                solutions.pose.POSE_CONNECTIONS,
+                solutions.drawing_styles.get_default_pose_landmarks_style()
+            )
+        
+        return annotated_frame
+    
+    def process_skeleton_data(self, detection_result, timestamp):
+        """Process and save skeleton data"""
+        if not self.skeleton_enabled or not detection_result.pose_landmarks:
+            return
+        
+        try:
+            for pose_landmarks in detection_result.pose_landmarks:
+                landmarks_data = {
+                    'timestamp': timestamp,
+                    'landmarks': []
+                }
+                
+                for i, landmark in enumerate(pose_landmarks):
+                    landmark_data = {
+                        'id': i,
+                        'x': landmark.x,
+                        'y': landmark.y,
+                        'z': landmark.z,
+                        'visibility': getattr(landmark, 'visibility', 0.0)
+                    }
+                    landmarks_data['landmarks'].append(landmark_data)
+                
+                # Save to skeleton file
+                if self.skeleton_file:
+                    self.skeleton_file.write(json.dumps(landmarks_data) + '\n')
+                    self.skeleton_file.flush()
+                    
+        except Exception as e:
+            print(f"Error processing skeleton data: {e}")
     
     def start_recording(self):
         """Start recording all cameras and IMU data"""
@@ -177,9 +269,11 @@ class MultiCameraRecorder:
         # Create IMU and gyro files
         imu_filename = f"imu_vector_{timestamp}.json"
         gyro_filename = f"gyroscope_{timestamp}.json"
+        skeleton_filename = f"skeleton_{timestamp}.json"
         
         self.imu_file = open(self.recordings_dir / imu_filename, 'w')
         self.gyro_file = open(self.recordings_dir / gyro_filename, 'w')
+        self.skeleton_file = open(self.recordings_dir / skeleton_filename, 'w')
         
         # Start DepthAI recording thread
         self.depthai_thread = threading.Thread(
@@ -190,6 +284,10 @@ class MultiCameraRecorder:
         self.depthai_thread.start()
         
         print(f"DepthAI recording started: {timestamp}")
+        if self.skeleton_enabled:
+            print("Skeleton recognition enabled")
+        else:
+            print("Skeleton recognition disabled")
     
     def depthai_recording_thread(self, timestamp):
         """Thread for DepthAI camera and IMU recording"""
@@ -256,8 +354,35 @@ class MultiCameraRecorder:
                         timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                         
-                        # Write frame
-                        out.write(frame)
+                        # Skeleton detection and processing
+                        if self.skeleton_enabled and self.pose_detector:
+                            try:
+                                # Convert BGR to RGB for MediaPipe
+                                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                
+                                # Create MediaPipe image
+                                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                                
+                                # Detect pose landmarks
+                                detection_result = self.pose_detector.detect(mp_image)
+                                
+                                # Draw landmarks on frame
+                                frame_with_skeleton = self.draw_landmarks_on_frame(frame, detection_result)
+                                
+                                # Process and save skeleton data
+                                current_time = time.time()
+                                self.process_skeleton_data(detection_result, current_time)
+                                
+                                # Write frame with skeleton overlay
+                                out.write(frame_with_skeleton)
+                                
+                            except Exception as e:
+                                print(f"Error in skeleton processing: {e}")
+                                # Fallback to original frame
+                                out.write(frame)
+                        else:
+                            # Write original frame if skeleton is disabled
+                            out.write(frame)
                     
                     if inImu is not None:
                         imuPackets = inImu.packets
@@ -336,6 +461,10 @@ class MultiCameraRecorder:
         if self.gyro_file:
             self.gyro_file.close()
             self.gyro_file = None
+        
+        if self.skeleton_file:
+            self.skeleton_file.close()
+            self.skeleton_file = None
         
         print("DepthAI recording stopped")
     
