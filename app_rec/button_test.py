@@ -1,19 +1,12 @@
-import RPi.GPIO as GPIO
-import time
+from gpiozero import Button
+from signal import pause
 
-BUTTON_GPIO = 17
+button = Button(17)  # GPIO17
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+def on_press():
+    print("Button Pressed")
 
-print("Press the button...")
+button.when_pressed = on_press
 
-try:
-    while True:
-        if GPIO.input(BUTTON_GPIO) == GPIO.LOW:
-            print("Button Pressed")
-        time.sleep(0.1)
-
-except KeyboardInterrupt:
-    GPIO.cleanup()
-    print("Clean exit.")
+print("Waiting for button press...")
+pause()
