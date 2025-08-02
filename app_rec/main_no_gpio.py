@@ -15,6 +15,7 @@ import threading
 import subprocess
 import signal
 import sys
+import serial
 from pathlib import Path
 from grove_lcd_rgb import set_text, set_rgb
 
@@ -47,6 +48,7 @@ class MultiCameraRecorder:
         self.imu_file = None
         self.gyro_file = None
         self.skeleton_file = None
+        self.gps_file = None
         self.camera1_file = None
         self.camera2_file = None
         self.camera3_file = None
@@ -147,6 +149,122 @@ class MultiCameraRecorder:
                     
         except Exception as e:
             print(f"Error processing skeleton data: {e}")
+    
+    def parse_gps_data(self, gps_line):
+        """Parse GPS NMEA data and extract useful information"""
+        try:
+            if gps_line.startswith('$GPGGA'):
+                # Parse GGA sentence (Global Positioning System Fix Data)
+                parts = gps_line.split(',')
+                if len(parts) >= 15:
+                    gps_data = {
+                        'timestamp': time.time(),
+                        'type': 'GGA',
+                        'time': parts[1] if parts[1] else None,
+                        'latitude': parts[2] if parts[2] else None,
+                        'latitude_dir': parts[3] if parts[3] else None,
+                        'longitude': parts[4] if parts[4] else None,
+                        'longitude_dir': parts[5] if parts[5] else None,
+                        'quality': parts[6] if parts[6] else None,
+                        'satellites': parts[7] if parts[7] else None,
+                        'hdop': parts[8] if parts[8] else None,
+                        'altitude': parts[9] if parts[9] else None,
+                        'altitude_unit': parts[10] if parts[10] else None,
+                        'geoid_height': parts[11] if parts[11] else None,
+                        'geoid_height_unit': parts[12] if parts[12] else None,
+                        'dgps_age': parts[13] if parts[13] else None,
+                        'checksum': parts[14].split('*')[1] if '*' in parts[14] else None
+                    }
+                    return gps_data
+            
+            elif gps_line.startswith('$GPRMC'):
+                # Parse RMC sentence (Recommended Minimum sentence C)
+                parts = gps_line.split(',')
+                if len(parts) >= 12:
+                    gps_data = {
+                        'timestamp': time.time(),
+                        'type': 'RMC',
+                        'time': parts[1] if parts[1] else None,
+                        'status': parts[2] if parts[2] else None,
+                        'latitude': parts[3] if parts[3] else None,
+                        'latitude_dir': parts[4] if parts[4] else None,
+                        'longitude': parts[5] if parts[5] else None,
+                        'longitude_dir': parts[6] if parts[6] else None,
+                        'speed': parts[7] if parts[7] else None,
+                        'course': parts[8] if parts[8] else None,
+                        'date': parts[9] if parts[9] else None,
+                        'variation': parts[10] if parts[10] else None,
+                        'variation_dir': parts[11] if parts[11] else None,
+                        'checksum': parts[12].split('*')[1] if '*' in parts[12] else None
+                    }
+                    return gps_data
+            
+            elif gps_line.startswith('$GPVTG'):
+                # Parse VTG sentence (Course over ground and Ground speed)
+                parts = gps_line.split(',')
+                if len(parts) >= 9:
+                    gps_data = {
+                        'timestamp': time.time(),
+                        'type': 'VTG',
+                        'course_true': parts[1] if parts[1] else None,
+                        'course_magnetic': parts[3] if parts[3] else None,
+                        'speed_knots': parts[5] if parts[5] else None,
+                        'speed_kmh': parts[7] if parts[7] else None,
+                        'checksum': parts[8].split('*')[1] if '*' in parts[8] else None
+                    }
+                    return gps_data
+            
+            # For other NMEA sentences, save raw data
+            else:
+                gps_data = {
+                    'timestamp': time.time(),
+                    'type': 'RAW',
+                    'sentence': gps_line.strip()
+                }
+                return gps_data
+                
+        except Exception as e:
+            print(f"Error parsing GPS data: {e}")
+            return None
+    
+    def gps_recording_thread(self, timestamp):
+        """Thread for GPS data recording"""
+        try:
+            # Open serial connection to GPS
+            gps_serial = serial.Serial('/dev/ttyUSB0', baudrate=9600, timeout=1)
+            print("GPS serial connection opened")
+            
+            while not self.stop_recording_event.is_set():
+                try:
+                    # Read GPS data
+                    gps_line = gps_serial.readline().decode('utf-8', errors='ignore').strip()
+                    
+                    if gps_line and gps_line.startswith('$'):
+                        # Parse GPS data
+                        gps_data = self.parse_gps_data(gps_line)
+                        
+                        if gps_data and self.gps_file:
+                            # Save GPS data to JSON file
+                            self.gps_file.write(json.dumps(gps_data) + '\n')
+                            self.gps_file.flush()
+                            
+                            # Print GPS status (optional)
+                            if gps_data.get('type') in ['GGA', 'RMC']:
+                                lat = gps_data.get('latitude')
+                                lon = gps_data.get('longitude')
+                                if lat and lon:
+                                    print(f"GPS: {lat}{gps_data.get('latitude_dir', '')}, {lon}{gps_data.get('longitude_dir', '')}")
+                    
+                except Exception as e:
+                    print(f"Error reading GPS data: {e}")
+                    time.sleep(1)  # Wait before retrying
+            
+            # Close serial connection
+            gps_serial.close()
+            print("GPS recording stopped")
+            
+        except Exception as e:
+            print(f"Error in GPS recording thread: {e}")
     
     def start_recording(self):
         """Start recording all cameras and IMU data"""
@@ -265,15 +383,17 @@ class MultiCameraRecorder:
             print(f"Error starting camera 2: {e}")
     
     def start_depthai_recording(self, timestamp):
-        """Start DepthAI camera and IMU recording"""
-        # Create IMU and gyro files
+        """Start DepthAI camera, IMU, and GPS recording"""
+        # Create IMU, gyro, skeleton, and GPS files
         imu_filename = f"imu_vector_{timestamp}.json"
         gyro_filename = f"gyroscope_{timestamp}.json"
         skeleton_filename = f"skeleton_{timestamp}.json"
+        gps_filename = f"gps_{timestamp}.json"
         
         self.imu_file = open(self.recordings_dir / imu_filename, 'w')
         self.gyro_file = open(self.recordings_dir / gyro_filename, 'w')
         self.skeleton_file = open(self.recordings_dir / skeleton_filename, 'w')
+        self.gps_file = open(self.recordings_dir / gps_filename, 'w')
         
         # Start DepthAI recording thread
         self.depthai_thread = threading.Thread(
@@ -283,7 +403,15 @@ class MultiCameraRecorder:
         self.depthai_thread.daemon = True
         self.depthai_thread.start()
         
-        print(f"DepthAI recording started: {timestamp}")
+        # Start GPS recording thread
+        self.gps_thread = threading.Thread(
+            target=self.gps_recording_thread,
+            args=(timestamp,)
+        )
+        self.gps_thread.daemon = True
+        self.gps_thread.start()
+        
+        print(f"DepthAI and GPS recording started: {timestamp}")
         if self.skeleton_enabled:
             print("Skeleton recognition enabled")
         else:
@@ -471,11 +599,14 @@ class MultiCameraRecorder:
             print("Camera 2 stopped")
     
     def stop_depthai_recording(self):
-        """Stop DepthAI recording"""
+        """Stop DepthAI and GPS recording"""
         self.stop_recording_event.set()
         
         if self.depthai_thread:
             self.depthai_thread.join(timeout=5)
+        
+        if self.gps_thread:
+            self.gps_thread.join(timeout=5)
         
         if self.imu_file:
             self.imu_file.close()
@@ -489,7 +620,11 @@ class MultiCameraRecorder:
             self.skeleton_file.close()
             self.skeleton_file = None
         
-        print("DepthAI recording stopped")
+        if self.gps_file:
+            self.gps_file.close()
+            self.gps_file = None
+        
+        print("DepthAI and GPS recording stopped")
     
     def cleanup(self):
         """Cleanup resources"""
