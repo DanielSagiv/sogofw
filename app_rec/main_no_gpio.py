@@ -44,6 +44,10 @@ class MultiCameraRecorder:
         self.camera2_process = None
         self.depthai_device = None
         
+        # Thread handles
+        self.depthai_thread = None
+        self.gps_thread = None
+        
         # File handles
         self.imu_file = None
         self.gyro_file = None
@@ -229,6 +233,7 @@ class MultiCameraRecorder:
     
     def gps_recording_thread(self, timestamp):
         """Thread for GPS data recording"""
+        print(f"DEBUG: GPS thread starting, event_set: {self.stop_recording_event.is_set()}")
         try:
             # Open serial connection to GPS
             gps_serial = serial.Serial('/dev/ttyUSB0', baudrate=9600, timeout=1)
@@ -262,9 +267,11 @@ class MultiCameraRecorder:
             # Close serial connection
             gps_serial.close()
             print("GPS recording stopped")
+            print("DEBUG: GPS thread exiting normally")
             
         except Exception as e:
             print(f"Error in GPS recording thread: {e}")
+            print("DEBUG: GPS thread exiting due to error")
     
     def start_recording(self):
         """Start recording all cameras and IMU data"""
@@ -274,6 +281,10 @@ class MultiCameraRecorder:
             
         print("Starting recording...")
         self.recording = True
+        
+        # Clear the stop event flag for new recording
+        self.stop_recording_event.clear()
+        print(f"DEBUG: stop_recording_event cleared, is_set: {self.stop_recording_event.is_set()}")
         
         # Update LCD to show recording status
         try:
@@ -295,6 +306,7 @@ class MultiCameraRecorder:
         self.start_depthai_recording(timestamp)
         
         print(f"Recording started - Session: {timestamp}")
+        print(f"DEBUG: recording={self.recording}, event_set={self.stop_recording_event.is_set()}")
     
     def stop_recording(self):
         """Stop all recording"""
@@ -319,6 +331,7 @@ class MultiCameraRecorder:
         self.stop_depthai_recording()
         
         print("Recording stopped")
+        print(f"DEBUG: recording={self.recording}, event_set={self.stop_recording_event.is_set()}")
     
     def start_camera1_recording(self, timestamp):
         """Start RPi camera 1 recording"""
@@ -419,6 +432,7 @@ class MultiCameraRecorder:
     
     def depthai_recording_thread(self, timestamp):
         """Thread for DepthAI camera and IMU recording"""
+        print(f"DEBUG: DepthAI thread starting, event_set: {self.stop_recording_event.is_set()}")
         try:
             # Create pipeline
             pipeline = dai.Pipeline()
@@ -580,9 +594,11 @@ class MultiCameraRecorder:
                 
                 # Cleanup
                 out.release()
+                print("DEBUG: DepthAI thread exiting normally")
                 
         except Exception as e:
             print(f"Error in DepthAI recording thread: {e}")
+            print("DEBUG: DepthAI thread exiting due to error")
     
     def stop_camera_processes(self):
         """Stop RPi camera recording processes"""
@@ -646,8 +662,10 @@ class MultiCameraRecorder:
                     user_input = input()
                     if user_input.strip() == "":
                         if not self.recording:
+                            print(f"DEBUG: Starting recording, event_set: {self.stop_recording_event.is_set()}")
                             self.start_recording()
                         else:
+                            print(f"DEBUG: Stopping recording, event_set: {self.stop_recording_event.is_set()}")
                             self.stop_recording()
                 except EOFError:
                     time.sleep(0.1)
