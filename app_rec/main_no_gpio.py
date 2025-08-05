@@ -94,6 +94,9 @@ class MultiCameraRecorder:
         
         # Check for ffmpeg
         self.check_ffmpeg()
+        
+        # Check available cameras
+        self.check_available_cameras()
     
     def check_ffmpeg(self):
         """Check if ffmpeg is available, install if needed"""
@@ -443,9 +446,14 @@ class MultiCameraRecorder:
                 stdout, stderr = self.camera2_process.communicate()
                 print(f"Camera 2 failed to start. stdout: {stdout.decode()}")
                 print(f"Camera 2 failed to start. stderr: {stderr.decode()}")
+                print("Camera 2 error - this might indicate:")
+                print("1. Camera 2 is not connected")
+                print("2. Camera 2 is not properly initialized")
+                print("3. Camera interface issue")
                 
         except Exception as e:
             print(f"Error starting camera 2: {e}")
+            print("Camera 2 exception - check hardware connection")
     
     def start_depthai_recording(self, timestamp):
         """Start DepthAI camera, IMU, and GPS recording"""
