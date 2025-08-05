@@ -24,7 +24,6 @@ try:
     print("LCD display enabled")
 except Exception as e:
     print(f"LCD display not available: {e}")
-    LCD_AVAILABLE = False
     
     # Create dummy functions if LCD is not available
     def set_text(text):
@@ -381,8 +380,8 @@ class MultiCameraRecorder:
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Use MJPEG format for recording
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 0 is the first camera)
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
@@ -418,8 +417,8 @@ class MultiCameraRecorder:
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Use MJPEG format for recording
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 1 is the second camera)
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
