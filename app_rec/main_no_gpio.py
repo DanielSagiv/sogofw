@@ -384,7 +384,7 @@ class MultiCameraRecorder:
         mp4_filepath = self.recordings_dir / mp4_filename
         
         # Use MJPEG format for recording (camera 0 is the first camera)
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg -o {mjpeg_filepath}"
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
@@ -421,7 +421,7 @@ class MultiCameraRecorder:
         mp4_filepath = self.recordings_dir / mp4_filename
         
         # Use MJPEG format for recording (camera 1 is the second camera)
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg -o {mjpeg_filepath}"
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
@@ -663,6 +663,12 @@ class MultiCameraRecorder:
     def stop_camera_processes(self):
         """Stop RPi camera recording processes and convert to MP4"""
         if self.camera1_process:
+            # Check if process is still running before stopping
+            if self.camera1_process.poll() is None:
+                print("Camera 1 process is still running, stopping...")
+            else:
+                print("Camera 1 process has already stopped")
+            
             self.camera1_process.terminate()
             self.camera1_process.wait()
             self.camera1_process = None
@@ -684,6 +690,12 @@ class MultiCameraRecorder:
                         print(f"Error converting Camera 1 to MP4: {e}")
         
         if self.camera2_process:
+            # Check if process is still running before stopping
+            if self.camera2_process.poll() is None:
+                print("Camera 2 process is still running, stopping...")
+            else:
+                print("Camera 2 process has already stopped")
+            
             self.camera2_process.terminate()
             self.camera2_process.wait()
             self.camera2_process = None
