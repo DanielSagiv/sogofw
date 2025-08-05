@@ -532,14 +532,14 @@ class MultiCameraRecorder:
                 
                 # Use AVI with XVID codec for normal speed
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')  # More reliable timing
-                fps = 15.0  # Normal frame rate for smooth video
+                fps = 30.0  # Match RPi cameras at 30 FPS
                 out = cv2.VideoWriter(str(video_filepath), fourcc, fps, (1920, 1080))  # Back to original
                 
                 if not out.isOpened():
                     print("Error: Could not initialize video writer")
                     return
                 
-                print(f"DepthAI video recording: {video_filename} at {fps} FPS (smooth video)")
+                print(f"DepthAI video recording: {video_filename} at {fps} FPS (30 FPS to match RPi cameras)")
                 
                 # Timing for smooth video
                 frame_interval = 1.0 / fps
@@ -567,7 +567,7 @@ class MultiCameraRecorder:
                             cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                             
                             # Add frame counter for debugging
-                            cv2.putText(frame, f"Frame: {frame_count} (15 FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                            cv2.putText(frame, f"Frame: {frame_count} (30 FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
                             
                             # Skeleton detection and processing
                             if self.skeleton_enabled and self.pose_detector:
