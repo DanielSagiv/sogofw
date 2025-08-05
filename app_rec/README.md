@@ -1,153 +1,244 @@
-# Multi-Camera Recording System (Python)
+# SOGOFW Multi-Camera Recording System
 
-A Python-based multi-camera recording system with IMU data collection for Raspberry Pi 5.
+A Python-based multi-sensor data acquisition system for Raspberry Pi 5 with:
+- 2x RPi cameras (via rpicam-vid)
+- 1x DepthAI camera (with integrated IMU)
+- GPS module (NMEA)
+- Skeleton recognition (MediaPipe)
+- LCD display (Grove RGB LCD)
+- Physical button control
 
-## Features
+## 🚀 Quick Setup for Raspberry Pi 5
 
-- **Button Control**: GPIO 17 button to start/stop recording
-- **3 Cameras**: 2 RPi cameras + 1 DepthAI camera
-- **IMU Data**: Gyroscope and rotation vector data from DepthAI
-- **LED Indicator**: GPIO 27 LED shows recording status
-- **5 Output Files**: 3 video files + 2 IMU data files
-
-## Hardware Requirements
-
-- Raspberry Pi 5
-- 2x Raspberry Pi cameras
-- 1x DepthAI OAK-D Pro Wide camera
-- Button connected to GPIO 17
-- LED connected to GPIO 27
-
-## Installation
-
-1. **Clone and setup:**
-   ```bash
-   cd app_rec
-   chmod +x setup.sh
-   ./setup.sh
-   ```
-
-2. **Activate virtual environment:**
-   ```bash
-   source venv/bin/activate
-   ```
-
-3. **Test GPIO:**
-   ```bash
-   python test_gpiod.py
-   ```
-
-## Usage
-
-1. **Run the application (try in this order):**
-   ```bash
-   # Try gpiod version first (recommended for Pi 5)
-   python main_gpiod.py
-   
-   # If that fails, try alternative version
-   python main_alternative.py
-   
-   # Last resort - original version
-   python main.py
-   ```
-
-2. **Press button to start recording** - Creates 5 files:
-   - `camera1_YYYYMMDD_HHMMSS.h264` - RPi camera 1 video
-   - `camera2_YYYYMMDD_HHMMSS.h264` - RPi camera 2 video  
-   - `camera3_YYYYMMDD_HHMMSS.avi` - DepthAI camera video
-   - `imu_vector_YYYYMMDD_HHMMSS.json` - IMU rotation vector data
-   - `gyroscope_YYYYMMDD_HHMMSS.json` - Gyroscope data
-
-3. **Press button again to stop recording**
-
-## File Structure
-
-```
-app_rec/
-├── main_gpiod.py        # Main app (gpiod - Pi 5 compatible)
-├── main_alternative.py  # Alternative (RPi.GPIO)
-├── main.py              # Original (gpiozero)
-├── requirements.txt      # Python dependencies
-├── setup.sh            # Setup script
-├── README.md           # This file
-├── test_gpiod.py       # gpiod test script
-├── test_gpio.py        # RPi.GPIO test script
-├── test_components.py  # Component testing script
-├── venv/               # Virtual environment
-└── recordings/         # Output files directory
-```
-
-## GPIO Troubleshooting
-
-### If you get "Cannot determine SOC peripheral base address" error:
-
-1. **Try the gpiod version (recommended for Pi 5):**
-   ```bash
-   python main_gpiod.py
-   ```
-
-2. **Test gpiod manually:**
-   ```bash
-   python test_gpiod.py
-   ```
-
-3. **If gpiod fails, try alternative:**
-   ```bash
-   python main_alternative.py
-   ```
-
-4. **Run as root (if needed):**
-   ```bash
-   sudo python main_gpiod.py
-   ```
-
-5. **Check GPIO permissions:**
-   ```bash
-   groups $USER
-   ls -la /dev/gpiomem
-   ```
-
-6. **Reinstall GPIO libraries:**
-   ```bash
-   pip install --upgrade gpiod RPi.GPIO gpiozero
-   ```
-
-### Button not working
+### 1. System Update
 ```bash
-# Test button outside virtual environment
-python3 -c "import gpiod; chip = gpiod.Chip('gpiochip0'); line = chip.get_line(17); line.request(consumer='test', type=gpiod.LINE_REQ_DIR_IN); print('Button pin:', line.get_value())"
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3-pip python3-venv git
 ```
 
-## Advantages over C Version
-
-- ✅ **Simpler GPIO handling** - `gpiod` library for Pi 5
-- ✅ **Better camera integration** - Direct DepthAI Python API
-- ✅ **Easier IMU handling** - Native Python JSON processing
-- ✅ **No compilation issues** - Pure Python
-- ✅ **Faster development** - No C compilation cycles
-- ✅ **Better error handling** - Python exceptions
-- ✅ **Easier to modify** - More readable and maintainable
-
-## Troubleshooting
-
-### Camera not found
+### 2. Install Camera Dependencies
 ```bash
-# Check camera connections
-rpicam-still --camera 1 -o test1.jpg
-rpicam-still -o test2.jpg
+# Enable camera interface
+sudo raspi-config nonint do_camera 0
+
+# Install camera tools
+sudo apt install -y rpicam-apps
+
+# Reboot to enable camera
+sudo reboot
 ```
 
-### DepthAI not connected
+### 3. Install GPIO Libraries
 ```bash
+# Install GPIO libraries
+sudo apt install -y python3-gpiozero python3-rpi.gpio python3-lgpio gpiod libgpiod-dev
+
+# Add user to gpio group
+sudo usermod -a -G gpio $USER
+```
+
+### 4. Install DepthAI
+```bash
+# Install DepthAI dependencies
+sudo apt install -y cmake build-essential libssl-dev
+
+# Install DepthAI Python package
+pip3 install depthai
+```
+
+### 5. Install Python Dependencies
+```bash
+# Navigate to project directory
+cd ~/sogofw/app_rec
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install required packages
+pip install opencv-python mediapipe protobuf pyserial smbus2
+```
+
+### 6. Hardware Setup
+
+#### Camera Connections
+- **RPi Camera 1**: Connect to CSI0 port
+- **RPi Camera 2**: Connect to CSI1 port  
+- **DepthAI Camera**: Connect via USB
+
+#### GPS Module
+- Connect GPS module to USB port (appears as `/dev/ttyUSB0`)
+- Test with: `sudo cat /dev/ttyUSB0`
+
+#### LCD Display (Optional)
+- Connect Grove RGB LCD to I2C pins (SDA/SCL)
+- Enable I2C: `sudo raspi-config nonint do_i2c 0`
+
+#### Physical Button (Optional)
+- Connect button to GPIO 17 (Pin 11)
+- Test with: `gpiozero-test-button 17`
+
+### 7. Test Individual Components
+
+#### Test Cameras
+```bash
+# Test RPi cameras
+rpicam-vid --camera 1 --output test1.h264
+rpicam-vid --output test2.h264
+
+# Test DepthAI
+python3 -c "import depthai as dai; print('DepthAI OK')"
+```
+
+#### Test GPS
+```bash
+# Check if GPS device exists
+ls /dev/ttyUSB*
+
+# Test GPS data
+sudo cat /dev/ttyUSB0
+```
+
+#### Test GPIO
+```bash
+# Test button
+python3 -c "from gpiozero import Button; b = Button(17); print('GPIO OK')"
+```
+
+### 8. Run the Application
+
+#### Option A: No GPIO (Keyboard Control)
+```bash
+cd ~/sogofw/app_rec
+source venv/bin/activate
+python3 main_no_gpio.py
+```
+- Press Enter to start/stop recording
+- Press Ctrl+C to exit
+
+#### Option B: With Physical Button
+```bash
+cd ~/sogofw/app_rec
+source venv/bin/activate
+python3 rec_vid_btn.py
+```
+- Press physical button to start/stop recording
+
+### 9. Troubleshooting
+
+#### Camera Issues
+```bash
+# Check camera status
+vcgencmd get_camera
+
+# List camera devices
+ls /dev/video*
+
+# Test camera permissions
+sudo usermod -a -G video $USER
+```
+
+#### GPIO Issues
+```bash
+# Check GPIO permissions
+groups $USER
+
+# Test GPIO access
+echo 17 | sudo tee /sys/class/gpio/export
+echo in | sudo tee /sys/class/gpio/gpio17/direction
+cat /sys/class/gpio/gpio17/value
+```
+
+#### DepthAI Issues
+```bash
+# Check USB devices
+lsusb | grep DepthAI
+
 # Test DepthAI connection
-python3 -c "import depthai as dai; print('DepthAI available')"
+python3 -c "import depthai as dai; device = dai.Device(); print('Connected')"
 ```
 
-## Dependencies
+#### GPS Issues
+```bash
+# Check serial ports
+ls /dev/tty*
 
-- `opencv-python` - Video processing
-- `depthai` - DepthAI camera interface
-- `gpiod` - GPIO control (Pi 5 compatible)
-- `gpiozero` - GPIO control (main version)
-- `RPi.GPIO` - GPIO control (alternative version)
-- `numpy` - Numerical processing 
+# Test GPS with different baud rates
+sudo cat /dev/ttyUSB0
+sudo cat /dev/ttyACM0
+```
+
+### 10. Recording Output
+
+Recordings are saved in `~/sogofw/app_rec/recordings/`:
+- `camera1_YYYYMMDD_HHMMSS.mp4` - RPi Camera 1 (converted from MJPEG)
+- `camera2_YYYYMMDD_HHMMSS.mp4` - RPi Camera 2 (converted from MJPEG)  
+- `camera3_YYYYMMDD_HHMMSS.avi` - DepthAI Camera
+- `imu_YYYYMMDD_HHMMSS.json` - IMU data
+- `skeleton_YYYYMMDD_HHMMSS.json` - Skeleton data
+- `gps_YYYYMMDD_HHMMSS.json` - GPS data
+
+**Note**: RPi cameras record in MJPEG format and are automatically converted to MP4 using ffmpeg.
+
+### 11. System Service (Optional)
+
+Create systemd service for auto-start:
+```bash
+sudo nano /etc/systemd/system/sogofw.service
+```
+
+Add content:
+```ini
+[Unit]
+Description=SOGOFW Recording System
+After=network.target
+
+[Service]
+Type=simple
+User=sagiv
+WorkingDirectory=/home/sagiv/sogofw/app_rec
+Environment=PATH=/home/sagiv/sogofw/app_rec/venv/bin
+ExecStart=/home/sagiv/sogofw/app_rec/venv/bin/python3 main_no_gpio.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable service:
+```bash
+sudo systemctl enable sogofw.service
+sudo systemctl start sogofw.service
+```
+
+## 📋 Requirements Checklist
+
+- [ ] Raspberry Pi 5 with latest OS
+- [ ] 2x RPi cameras connected
+- [ ] DepthAI camera connected via USB
+- [ ] GPS module connected
+- [ ] LCD display connected (optional)
+- [ ] Physical button connected (optional)
+- [ ] All Python dependencies installed
+- [ ] GPIO libraries installed
+- [ ] Camera interface enabled
+- [ ] I2C enabled (for LCD)
+- [ ] User added to gpio and video groups
+
+## 🆘 Common Issues
+
+1. **"No module named 'depthai'"** → Install DepthAI: `pip3 install depthai`
+2. **"Permission denied" for GPIO** → Add user to gpio group and reboot
+3. **"Camera not found"** → Enable camera interface in raspi-config
+4. **"GPS device not found"** → Check USB connection and device name
+5. **"LCD not working"** → Enable I2C interface in raspi-config
+
+## 📞 Support
+
+If you encounter issues:
+1. Check the troubleshooting section above
+2. Verify all hardware connections
+3. Test individual components
+4. Check system logs: `journalctl -u sogofw.service` 

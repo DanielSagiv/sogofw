@@ -17,7 +17,21 @@ import signal
 import sys
 import serial
 from pathlib import Path
-from grove_lcd_rgb import set_text, set_rgb
+# LCD Display (optional)
+try:
+    from grove_lcd_rgb import set_text, set_rgb
+    LCD_AVAILABLE = True
+    print("LCD display enabled")
+except Exception as e:
+    print(f"LCD display not available: {e}")
+    LCD_AVAILABLE = False
+    
+    # Create dummy functions if LCD is not available
+    def set_text(text):
+        print(f"LCD: {text}")
+    
+    def set_rgb(r, g, b):
+        print(f"LCD RGB: ({r}, {g}, {b})")
 
 # MediaPipe imports for skeleton recognition
 import mediapipe as mp
@@ -65,16 +79,37 @@ class MultiCameraRecorder:
         self.initialize_pose_detector()
         
         # Initialize LCD
-        try:
-            set_rgb(0, 128, 64)  # Green color
-            set_text("SOGO READY")
-            print("LCD initialized successfully")
-        except Exception as e:
-            print(f"LCD initialization failed: {e}")
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(0, 128, 64)  # Green color
+                set_text("SOGO READY")
+                print("LCD initialized successfully")
+            except Exception as e:
+                print(f"LCD initialization failed: {e}")
+        else:
+            print("LCD not available - using console output")
         
         print("Multi-Camera Recording System Initialized (No GPIO)")
         print("Press Enter to start/stop recording")
         print("Press Ctrl+C to exit")
+        
+        # Check for ffmpeg
+        self.check_ffmpeg()
+    
+    def check_ffmpeg(self):
+        """Check if ffmpeg is available, install if needed"""
+        try:
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            print("✅ ffmpeg is available")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("⚠️  ffmpeg not found. Installing...")
+            try:
+                subprocess.run(['sudo', 'apt', 'update'], check=True)
+                subprocess.run(['sudo', 'apt', 'install', '-y', 'ffmpeg'], check=True)
+                print("✅ ffmpeg installed successfully")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install ffmpeg: {e}")
+                print("⚠️  Camera conversion to MP4 will not work without ffmpeg")
     
     def get_timestamp(self):
         """Get current timestamp for filenames"""
@@ -287,11 +322,14 @@ class MultiCameraRecorder:
         print(f"DEBUG: stop_recording_event cleared, is_set: {self.stop_recording_event.is_set()}")
         
         # Update LCD to show recording status
-        try:
-            set_rgb(255, 0, 0)  # Red color for recording
-            set_text("RECORDING")
-        except Exception as e:
-            print(f"LCD update failed: {e}")
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(255, 0, 0)  # Red color for recording
+                set_text("RECORDING")
+            except Exception as e:
+                print(f"LCD update failed: {e}")
+        else:
+            print("LCD not available - cannot update recording status")
         
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
@@ -318,11 +356,14 @@ class MultiCameraRecorder:
         self.recording = False
         
         # Update LCD to show ready status
-        try:
-            set_rgb(0, 128, 64)  # Green color for ready
-            set_text("SOGO READY")
-        except Exception as e:
-            print(f"LCD update failed: {e}")
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(0, 128, 64)  # Green color for ready
+                set_text("SOGO READY")
+            except Exception as e:
+                print(f"LCD update failed: {e}")
+        else:
+            print("LCD not available - cannot update ready status")
         
         # Stop camera processes
         self.stop_camera_processes()
@@ -335,15 +376,17 @@ class MultiCameraRecorder:
     
     def start_camera1_recording(self, timestamp):
         """Start RPi camera 1 recording"""
-        filename = f"camera1_{timestamp}.h264"
-        filepath = self.recordings_dir / filename
+        mjpeg_filename = f"camera1_{timestamp}.mjpeg"
+        mp4_filename = f"camera1_{timestamp}.mp4"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Try a much simpler command to test if camera works
-        cmd = f"rpicam-vid --camera 1 --output {filepath}"
+        # Use MJPEG format for recording
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
-            print(f"Output file: {filepath}")
+            print(f"Output file: {mjpeg_filepath}")
             
             # Start the process
             self.camera1_process = subprocess.Popen(
@@ -353,9 +396,13 @@ class MultiCameraRecorder:
                 stderr=subprocess.PIPE
             )
             
+            # Store filenames for conversion later
+            self.camera1_mjpeg_file = mjpeg_filepath
+            self.camera1_mp4_file = mp4_filepath
+            
             # Check if process started successfully
             if self.camera1_process.poll() is None:
-                print(f"Camera 1 recording started successfully: {filename}")
+                print(f"Camera 1 recording started successfully: {mjpeg_filename}")
             else:
                 stdout, stderr = self.camera1_process.communicate()
                 print(f"Camera 1 failed to start. stdout: {stdout.decode()}")
@@ -366,15 +413,17 @@ class MultiCameraRecorder:
     
     def start_camera2_recording(self, timestamp):
         """Start RPi camera 2 recording"""
-        filename = f"camera2_{timestamp}.h264"
-        filepath = self.recordings_dir / filename
+        mjpeg_filename = f"camera2_{timestamp}.mjpeg"
+        mp4_filename = f"camera2_{timestamp}.mp4"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Try a much simpler command to test if camera works
-        cmd = f"rpicam-vid --output {filepath}"
+        # Use MJPEG format for recording
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
-            print(f"Output file: {filepath}")
+            print(f"Output file: {mjpeg_filepath}")
             
             # Start the process
             self.camera2_process = subprocess.Popen(
@@ -384,9 +433,13 @@ class MultiCameraRecorder:
                 stderr=subprocess.PIPE
             )
             
+            # Store filenames for conversion later
+            self.camera2_mjpeg_file = mjpeg_filepath
+            self.camera2_mp4_file = mp4_filepath
+            
             # Check if process started successfully
             if self.camera2_process.poll() is None:
-                print(f"Camera 2 recording started successfully: {filename}")
+                print(f"Camera 2 recording started successfully: {mjpeg_filename}")
             else:
                 stdout, stderr = self.camera2_process.communicate()
                 print(f"Camera 2 failed to start. stdout: {stdout.decode()}")
@@ -601,18 +654,48 @@ class MultiCameraRecorder:
             print("DEBUG: DepthAI thread exiting due to error")
     
     def stop_camera_processes(self):
-        """Stop RPi camera recording processes"""
+        """Stop RPi camera recording processes and convert to MP4"""
         if self.camera1_process:
             self.camera1_process.terminate()
             self.camera1_process.wait()
             self.camera1_process = None
             print("Camera 1 stopped")
+            
+            # Convert MJPEG to MP4
+            if hasattr(self, 'camera1_mjpeg_file') and hasattr(self, 'camera1_mp4_file'):
+                if self.camera1_mjpeg_file.exists():
+                    try:
+                        cmd = f"ffmpeg -framerate 30 -i {self.camera1_mjpeg_file} -c:v libx264 {self.camera1_mp4_file}"
+                        print(f"Converting Camera 1 to MP4: {cmd}")
+                        subprocess.run(cmd, shell=True, check=True)
+                        print(f"Camera 1 MP4 created: {self.camera1_mp4_file}")
+                        
+                        # Remove MJPEG file after conversion
+                        self.camera1_mjpeg_file.unlink()
+                        print(f"Removed MJPEG file: {self.camera1_mjpeg_file}")
+                    except Exception as e:
+                        print(f"Error converting Camera 1 to MP4: {e}")
         
         if self.camera2_process:
             self.camera2_process.terminate()
             self.camera2_process.wait()
             self.camera2_process = None
             print("Camera 2 stopped")
+            
+            # Convert MJPEG to MP4
+            if hasattr(self, 'camera2_mjpeg_file') and hasattr(self, 'camera2_mp4_file'):
+                if self.camera2_mjpeg_file.exists():
+                    try:
+                        cmd = f"ffmpeg -framerate 30 -i {self.camera2_mjpeg_file} -c:v libx264 {self.camera2_mp4_file}"
+                        print(f"Converting Camera 2 to MP4: {cmd}")
+                        subprocess.run(cmd, shell=True, check=True)
+                        print(f"Camera 2 MP4 created: {self.camera2_mp4_file}")
+                        
+                        # Remove MJPEG file after conversion
+                        self.camera2_mjpeg_file.unlink()
+                        print(f"Removed MJPEG file: {self.camera2_mjpeg_file}")
+                    except Exception as e:
+                        print(f"Error converting Camera 2 to MP4: {e}")
     
     def stop_depthai_recording(self):
         """Stop DepthAI and GPS recording"""
