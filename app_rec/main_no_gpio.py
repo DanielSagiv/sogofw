@@ -113,6 +113,53 @@ class MultiCameraRecorder:
                 print(f"❌ Failed to install ffmpeg: {e}")
                 print("⚠️  Camera conversion to MP4 will not work without ffmpeg")
     
+    def check_available_cameras(self):
+        """Check what cameras are available on the system"""
+        print("[INFO] Checking available cameras...")
+        
+        # Check CSI cameras
+        csi_cameras = []
+        for i in range(4):  # Check first 4 video devices
+            device_path = f"/dev/video{i}"
+            if os.path.exists(device_path):
+                try:
+                    cap = cv2.VideoCapture(device_path)
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        if ret:
+                            print(f"✅ CSI Camera {i} found at {device_path}")
+                            csi_cameras.append(device_path)
+                        else:
+                            print(f"⚠️  CSI Camera {i} at {device_path} - device exists but no frame")
+                    else:
+                        print(f"❌ CSI Camera {i} at {device_path} - device exists but not accessible")
+                    cap.release()
+                except Exception as e:
+                    print(f"❌ CSI Camera {i} at {device_path} - Error: {e}")
+            else:
+                print(f"❌ CSI Camera {i} at {device_path} - not found")
+        
+        # Check DepthAI camera
+        try:
+            # Try to create a simple DepthAI pipeline to test
+            pipeline = dai.Pipeline()
+            cam = pipeline.create(dai.node.ColorCamera)
+            cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+            cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+            
+            xout = pipeline.create(dai.node.XLinkOut)
+            xout.setStreamName("video")
+            cam.video.link(xout.input)
+            
+            device = dai.Device(pipeline)
+            print("✅ DepthAI camera found and accessible")
+            device.close()
+        except Exception as e:
+            print(f"❌ DepthAI camera not available: {e}")
+        
+        print(f"[SUMMARY] Found {len(csi_cameras)} working CSI cameras: {csi_cameras}")
+        return csi_cameras
+    
     def get_timestamp(self):
         """Get current timestamp for filenames"""
         return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
