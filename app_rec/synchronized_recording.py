@@ -292,7 +292,7 @@ class SynchronizedRecorder:
                     if file_size > 0:
                         # Stop rpicam-vid process temporarily to free up camera
                         self.stop_rpicam_processes()
-                        time.sleep(0.2)  # Give time for camera to be freed
+                        time.sleep(0.3)  # Give more time for camera to be freed
                         
                         # Use direct VideoCapture to get the latest frame
                         try:
@@ -305,25 +305,31 @@ class SynchronizedRecorder:
                                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                                 cap.set(cv2.CAP_PROP_FPS, 30)
                                 
-                                # Read the latest frame
-                                ret, frame = cap.read()
+                                # Read multiple frames to get the latest one
+                                last_frame = None
+                                for i in range(5):  # Read 5 frames to get the latest
+                                    ret, frame = cap.read()
+                                    if ret and frame is not None:
+                                        last_frame = frame.copy()
+                                    time.sleep(0.05)  # Small delay between reads
+                                
                                 cap.release()
                                 
-                                if ret and frame is not None:
-                                    print(f"✅ cam1: Frame captured directly, shape: {frame.shape}")
+                                if last_frame is not None:
+                                    print(f"✅ cam1: Frame captured directly, shape: {last_frame.shape}")
                                     
                                     # Add frame number and timestamp overlay
                                     frame_number = len(self.camera_frames["cam1"]) + 1
                                     timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                     
                                     # Add overlays
-                                    cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                    cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                    cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                    cv2.putText(last_frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                                     
                                     # Store frame with timestamp
                                     with self.frame_locks["cam1"]:
-                                        self.camera_frames["cam1"].append((frame, current_time))
+                                        self.camera_frames["cam1"].append((last_frame, current_time))
                                     
                                     print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                 else:
@@ -333,10 +339,21 @@ class SynchronizedRecorder:
                         except Exception as e:
                             print(f"❌ cam1: Error capturing frame: {e}")
                         
-                        # Restart rpicam-vid process
-                        cmd = f"rpicam-vid --camera 0 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+                        # Restart rpicam-vid process with a fresh file
+                        try:
+                            if process.poll() is None:
+                                process.terminate()
+                                process.wait(timeout=1)
+                        except:
+                            pass
+                        
+                        # Create a new MJPEG file for each sample to avoid conflicts
+                        timestamp = int(time.time() * 1000)
+                        new_mjpeg_filepath = self.recordings_dir / f"cam1_recording_{timestamp}.mjpeg"
+                        cmd = f"rpicam-vid --camera 0 --codec mjpeg -t 0 -o {new_mjpeg_filepath}"
                         process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        print(f"🔄 cam1: Restarted MJPEG recording process")
+                        mjpeg_filepath = new_mjpeg_filepath  # Update the filepath
+                        print(f"🔄 cam1: Restarted MJPEG recording process with new file: {new_mjpeg_filepath.name}")
                     else:
                         print(f"❌ cam1: MJPEG file is empty (size: {file_size})")
                 else:
@@ -394,7 +411,7 @@ class SynchronizedRecorder:
                     if file_size > 0:
                         # Stop rpicam-vid process temporarily to free up camera
                         self.stop_rpicam_processes()
-                        time.sleep(0.2)  # Give time for camera to be freed
+                        time.sleep(0.3)  # Give more time for camera to be freed
                         
                         # Use direct VideoCapture to get the latest frame
                         try:
@@ -407,25 +424,31 @@ class SynchronizedRecorder:
                                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                                 cap.set(cv2.CAP_PROP_FPS, 30)
                                 
-                                # Read the latest frame
-                                ret, frame = cap.read()
+                                # Read multiple frames to get the latest one
+                                last_frame = None
+                                for i in range(5):  # Read 5 frames to get the latest
+                                    ret, frame = cap.read()
+                                    if ret and frame is not None:
+                                        last_frame = frame.copy()
+                                    time.sleep(0.05)  # Small delay between reads
+                                
                                 cap.release()
                                 
-                                if ret and frame is not None:
-                                    print(f"✅ cam2: Frame captured directly, shape: {frame.shape}")
+                                if last_frame is not None:
+                                    print(f"✅ cam2: Frame captured directly, shape: {last_frame.shape}")
                                     
                                     # Add frame number and timestamp overlay
                                     frame_number = len(self.camera_frames["cam2"]) + 1
                                     timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                     
                                     # Add overlays
-                                    cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                    cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                    cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                    cv2.putText(last_frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                                     
                                     # Store frame with timestamp
                                     with self.frame_locks["cam2"]:
-                                        self.camera_frames["cam2"].append((frame, current_time))
+                                        self.camera_frames["cam2"].append((last_frame, current_time))
                                     
                                     print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                 else:
@@ -435,10 +458,21 @@ class SynchronizedRecorder:
                         except Exception as e:
                             print(f"❌ cam2: Error capturing frame: {e}")
                         
-                        # Restart rpicam-vid process
-                        cmd = f"rpicam-vid --camera 1 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+                        # Restart rpicam-vid process with a fresh file
+                        try:
+                            if process.poll() is None:
+                                process.terminate()
+                                process.wait(timeout=1)
+                        except:
+                            pass
+                        
+                        # Create a new MJPEG file for each sample to avoid conflicts
+                        timestamp = int(time.time() * 1000)
+                        new_mjpeg_filepath = self.recordings_dir / f"cam2_recording_{timestamp}.mjpeg"
+                        cmd = f"rpicam-vid --camera 1 --codec mjpeg -t 0 -o {new_mjpeg_filepath}"
                         process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        print(f"🔄 cam2: Restarted MJPEG recording process")
+                        mjpeg_filepath = new_mjpeg_filepath  # Update the filepath
+                        print(f"🔄 cam2: Restarted MJPEG recording process with new file: {new_mjpeg_filepath.name}")
                     else:
                         print(f"❌ cam2: MJPEG file is empty (size: {file_size})")
                 else:
