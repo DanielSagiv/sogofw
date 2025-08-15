@@ -383,16 +383,16 @@ class MultiCameraRecorder:
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
         
-        # Start all cameras with minimal delays for synchronization
-        print("Starting all cameras with synchronization...")
+        # Start all cameras with proper initialization
+        print("Starting all cameras with proper initialization...")
         
         # Start camera 1 (RPi camera 1)
         self.start_camera1_recording(timestamp)
-        time.sleep(0.05)  # Small delay to prevent conflicts
+        time.sleep(0.1)  # Give camera 1 time to initialize
         
         # Start camera 2 (RPi camera 2) 
         self.start_camera2_recording(timestamp)
-        time.sleep(0.05)  # Small delay to prevent conflicts
+        time.sleep(0.1)  # Give camera 2 time to initialize
         
         # Start camera 3 (DepthAI) and IMU - start immediately
         self.start_depthai_recording_sync(timestamp)
@@ -457,6 +457,14 @@ class MultiCameraRecorder:
             # Check if process started successfully
             if self.camera1_process.poll() is None:
                 print(f"Camera 1 recording started successfully: {mjpeg_filename}")
+                # Wait a moment and check again
+                time.sleep(0.2)
+                if self.camera1_process.poll() is None:
+                    print("Camera 1 is running properly")
+                else:
+                    stdout, stderr = self.camera1_process.communicate()
+                    print(f"Camera 1 stopped unexpectedly. stdout: {stdout.decode()}")
+                    print(f"Camera 1 stopped unexpectedly. stderr: {stderr.decode()}")
             else:
                 stdout, stderr = self.camera1_process.communicate()
                 print(f"Camera 1 failed to start. stdout: {stdout.decode()}")
@@ -494,6 +502,14 @@ class MultiCameraRecorder:
             # Check if process started successfully
             if self.camera2_process.poll() is None:
                 print(f"Camera 2 recording started successfully: {mjpeg_filename}")
+                # Wait a moment and check again
+                time.sleep(0.2)
+                if self.camera2_process.poll() is None:
+                    print("Camera 2 is running properly")
+                else:
+                    stdout, stderr = self.camera2_process.communicate()
+                    print(f"Camera 2 stopped unexpectedly. stdout: {stdout.decode()}")
+                    print(f"Camera 2 stopped unexpectedly. stderr: {stderr.decode()}")
             else:
                 stdout, stderr = self.camera2_process.communicate()
                 print(f"Camera 2 failed to start. stdout: {stdout.decode()}")
