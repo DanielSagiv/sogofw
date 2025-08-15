@@ -319,34 +319,19 @@ class SynchronizedRecorder:
                         print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Try to read frame directly from MJPEG file without ffmpeg
+                            # Use ffmpeg with timeout to extract the latest frame
                             try:
-                                # Read the MJPEG file as binary and extract a frame
-                                with open(mjpeg_filepath, 'rb') as f:
-                                    # Read the last 100KB of the file (should contain recent frames)
-                                    f.seek(max(0, file_size - 100*1024))
-                                    data = f.read()
+                                # Create temporary frame file
+                                frame_filename = f"temp_frame1_{int(time.time() * 1000)}.jpg"
+                                frame_filepath = self.recordings_dir / frame_filename
                                 
-                                # Try to find JPEG markers in the data
-                                jpeg_markers = []
-                                pos = 0
-                                while True:
-                                    pos = data.find(b'\xff\xd8', pos)  # JPEG start marker
-                                    if pos == -1:
-                                        break
-                                    end_pos = data.find(b'\xff\xd9', pos)  # JPEG end marker
-                                    if end_pos != -1:
-                                        jpeg_markers.append((pos, end_pos + 2))
-                                    pos += 2
+                                # Use ffmpeg to extract the last frame with timeout
+                                ffmpeg_cmd = f"timeout 1 ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
+                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)
                                 
-                                if jpeg_markers:
-                                    # Take the last complete JPEG frame
-                                    start, end = jpeg_markers[-1]
-                                    jpeg_data = data[start:end]
-                                    
-                                    # Convert to numpy array
-                                    nparr = np.frombuffer(jpeg_data, np.uint8)
-                                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                                if result.returncode == 0 and frame_filepath.exists():
+                                    # Read the extracted frame
+                                    frame = cv2.imread(str(frame_filepath))
                                     
                                     if frame is not None:
                                         print(f"✅ cam1: Frame extracted successfully, shape: {frame.shape}")
@@ -366,9 +351,44 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam1: Failed to decode JPEG frame")
+                                        print(f"❌ cam1: Failed to read extracted frame")
+                                    
+                                    # Clean up temporary file
+                                    if frame_filepath.exists():
+                                        frame_filepath.unlink()
                                 else:
-                                    print(f"❌ cam1: No JPEG frames found in MJPEG file")
+                                    print(f"❌ cam1: Failed to extract frame with ffmpeg (return code: {result.returncode})")
+                            except subprocess.TimeoutExpired:
+                                print(f"❌ cam1: ffmpeg timeout - trying alternative method")
+                                # Fallback: try to read the file directly
+                                try:
+                                    cap = cv2.VideoCapture(str(mjpeg_filepath))
+                                    if cap.isOpened():
+                                        ret, frame = cap.read()
+                                        cap.release()
+                                        if ret and frame is not None:
+                                            print(f"✅ cam1: Frame extracted with fallback method, shape: {frame.shape}")
+                                            
+                                            # Add frame number and timestamp overlay
+                                            frame_number = len(self.camera_frames["cam1"]) + 1
+                                            timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                            
+                                            # Add overlays
+                                            cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                            cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                            
+                                            # Store frame with timestamp
+                                            with self.frame_locks["cam1"]:
+                                                self.camera_frames["cam1"].append((frame, current_time))
+                                            
+                                            print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+                                        else:
+                                            print(f"❌ cam1: Fallback method also failed")
+                                    else:
+                                        print(f"❌ cam1: Could not open MJPEG file with VideoCapture")
+                                except Exception as e:
+                                    print(f"❌ cam1: Fallback method error: {e}")
                             except Exception as e:
                                 print(f"❌ cam1: Error extracting frame: {e}")
                         else:
@@ -469,34 +489,19 @@ class SynchronizedRecorder:
                         print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Try to read frame directly from MJPEG file without ffmpeg
+                            # Use ffmpeg with timeout to extract the latest frame
                             try:
-                                # Read the MJPEG file as binary and extract a frame
-                                with open(mjpeg_filepath, 'rb') as f:
-                                    # Read the last 100KB of the file (should contain recent frames)
-                                    f.seek(max(0, file_size - 100*1024))
-                                    data = f.read()
+                                # Create temporary frame file
+                                frame_filename = f"temp_frame2_{int(time.time() * 1000)}.jpg"
+                                frame_filepath = self.recordings_dir / frame_filename
                                 
-                                # Try to find JPEG markers in the data
-                                jpeg_markers = []
-                                pos = 0
-                                while True:
-                                    pos = data.find(b'\xff\xd8', pos)  # JPEG start marker
-                                    if pos == -1:
-                                        break
-                                    end_pos = data.find(b'\xff\xd9', pos)  # JPEG end marker
-                                    if end_pos != -1:
-                                        jpeg_markers.append((pos, end_pos + 2))
-                                    pos += 2
+                                # Use ffmpeg to extract the last frame with timeout
+                                ffmpeg_cmd = f"timeout 1 ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
+                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)
                                 
-                                if jpeg_markers:
-                                    # Take the last complete JPEG frame
-                                    start, end = jpeg_markers[-1]
-                                    jpeg_data = data[start:end]
-                                    
-                                    # Convert to numpy array
-                                    nparr = np.frombuffer(jpeg_data, np.uint8)
-                                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                                if result.returncode == 0 and frame_filepath.exists():
+                                    # Read the extracted frame
+                                    frame = cv2.imread(str(frame_filepath))
                                     
                                     if frame is not None:
                                         print(f"✅ cam2: Frame extracted successfully, shape: {frame.shape}")
@@ -516,9 +521,44 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam2: Failed to decode JPEG frame")
+                                        print(f"❌ cam2: Failed to read extracted frame")
+                                    
+                                    # Clean up temporary file
+                                    if frame_filepath.exists():
+                                        frame_filepath.unlink()
                                 else:
-                                    print(f"❌ cam2: No JPEG frames found in MJPEG file")
+                                    print(f"❌ cam2: Failed to extract frame with ffmpeg (return code: {result.returncode})")
+                            except subprocess.TimeoutExpired:
+                                print(f"❌ cam2: ffmpeg timeout - trying alternative method")
+                                # Fallback: try to read the file directly
+                                try:
+                                    cap = cv2.VideoCapture(str(mjpeg_filepath))
+                                    if cap.isOpened():
+                                        ret, frame = cap.read()
+                                        cap.release()
+                                        if ret and frame is not None:
+                                            print(f"✅ cam2: Frame extracted with fallback method, shape: {frame.shape}")
+                                            
+                                            # Add frame number and timestamp overlay
+                                            frame_number = len(self.camera_frames["cam2"]) + 1
+                                            timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                            
+                                            # Add overlays
+                                            cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                            cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                            
+                                            # Store frame with timestamp
+                                            with self.frame_locks["cam2"]:
+                                                self.camera_frames["cam2"].append((frame, current_time))
+                                            
+                                            print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+                                        else:
+                                            print(f"❌ cam2: Fallback method also failed")
+                                    else:
+                                        print(f"❌ cam2: Could not open MJPEG file with VideoCapture")
+                                except Exception as e:
+                                    print(f"❌ cam2: Fallback method error: {e}")
                             except Exception as e:
                                 print(f"❌ cam2: Error extracting frame: {e}")
                         else:
