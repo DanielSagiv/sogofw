@@ -172,39 +172,64 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 1 (camera 0) frame sampling"""
         print("CSI Camera 1 thread starting...")
         
-        cap = cv2.VideoCapture(0)  # Camera 0
-        if not cap.isOpened():
-            print("❌ Failed to open CSI Camera 1")
+        # Try different device paths for camera 0
+        device_paths = ["/dev/video0", "/dev/video2", "/dev/video4"]
+        cap = None
+        
+        for device_path in device_paths:
+            print(f"Trying CSI Camera 1 at {device_path}")
+            cap = cv2.VideoCapture(device_path)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret:
+                    print(f"✅ CSI Camera 1 opened successfully at {device_path}")
+                    break
+                else:
+                    cap.release()
+                    cap = None
+            else:
+                cap.release()
+                cap = None
+        
+        if cap is None or not cap.isOpened():
+            print("❌ Failed to open CSI Camera 1 on any device path")
             return
         
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
         
         frame_count = 0
-        start_time = time.time()
+        last_sample_time = 0
+        sample_interval = 0.5  # Sample every 0.5 seconds
         
         while not self.stop_event.is_set():
             ret, frame = cap.read()
             if not ret:
                 print("❌ Failed to read frame from CSI Camera 1")
-                break
+                # Try to recover
+                time.sleep(0.1)
+                continue
+            
+            current_time = time.time()
             
             # Add timestamp and frame number
             timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
             cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
             cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
             
-            # Sample frame if sampling is active
-            if self.sampling_active:
+            # Sample frame if sampling is active and 0.5 seconds have passed
+            if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
                 with self.frame_locks["CSI Cam 0"]:
                     self.camera_frames["CSI Cam 0"].append({
                         'frame': frame.copy(),
                         'frame_number': frame_count,
-                        'timestamp': time.time(),
+                        'timestamp': current_time,
                         'timestamp_str': timestamp_str
                     })
-                    print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames")
+                    print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
+                last_sample_time = current_time
             
             frame_count += 1
             
@@ -218,39 +243,64 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        cap = cv2.VideoCapture(1)  # Camera 1
-        if not cap.isOpened():
-            print("❌ Failed to open CSI Camera 2")
+        # Try different device paths for camera 1
+        device_paths = ["/dev/video1", "/dev/video3", "/dev/video5"]
+        cap = None
+        
+        for device_path in device_paths:
+            print(f"Trying CSI Camera 2 at {device_path}")
+            cap = cv2.VideoCapture(device_path)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret:
+                    print(f"✅ CSI Camera 2 opened successfully at {device_path}")
+                    break
+                else:
+                    cap.release()
+                    cap = None
+            else:
+                cap.release()
+                cap = None
+        
+        if cap is None or not cap.isOpened():
+            print("❌ Failed to open CSI Camera 2 on any device path")
             return
         
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
         
         frame_count = 0
-        start_time = time.time()
+        last_sample_time = 0
+        sample_interval = 0.5  # Sample every 0.5 seconds
         
         while not self.stop_event.is_set():
             ret, frame = cap.read()
             if not ret:
                 print("❌ Failed to read frame from CSI Camera 2")
-                break
+                # Try to recover
+                time.sleep(0.1)
+                continue
+            
+            current_time = time.time()
             
             # Add timestamp and frame number
             timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
             cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
             cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
             
-            # Sample frame if sampling is active
-            if self.sampling_active:
+            # Sample frame if sampling is active and 0.5 seconds have passed
+            if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
                 with self.frame_locks["CSI Cam 1"]:
                     self.camera_frames["CSI Cam 1"].append({
                         'frame': frame.copy(),
                         'frame_number': frame_count,
-                        'timestamp': time.time(),
+                        'timestamp': current_time,
                         'timestamp_str': timestamp_str
                     })
-                    print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames")
+                    print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
+                last_sample_time = current_time
             
             frame_count += 1
             
@@ -292,29 +342,32 @@ class SynchronizedRecorder:
                 qRgb = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
                 
                 frame_count = 0
-                start_time = time.time()
+                last_sample_time = 0
+                sample_interval = 0.5  # Sample every 0.5 seconds
                 
                 while not self.stop_event.is_set():
                     inRgb = qRgb.tryGet()
                     
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
+                        current_time = time.time()
                         
                         # Add timestamp and frame number
                         timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                         cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
                         
-                        # Sample frame if sampling is active
-                        if self.sampling_active:
+                        # Sample frame if sampling is active and 0.5 seconds have passed
+                        if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
                             with self.frame_locks["DepthAI Cam"]:
                                 self.camera_frames["DepthAI Cam"].append({
                                     'frame': frame.copy(),
                                     'frame_number': frame_count,
-                                    'timestamp': time.time(),
+                                    'timestamp': current_time,
                                     'timestamp_str': timestamp_str
                                 })
-                                print(f"[SAMPLING] DepthAI Cam: {len(self.camera_frames['DepthAI Cam'])} frames")
+                                print(f"[SAMPLING] DepthAI Cam: {len(self.camera_frames['DepthAI Cam'])} frames at {timestamp_str}")
+                            last_sample_time = current_time
                         
                         frame_count += 1
                     
