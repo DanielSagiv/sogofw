@@ -596,9 +596,10 @@ class MultiCameraRecorder:
                 
                 print(f"DepthAI video recording: {video_filename} at {fps} FPS (30 FPS to match RPi cameras)")
                 
-                # Frame counter for debugging
+                # Timing for smooth video
+                frame_interval = 1.0 / fps
+                last_frame_time = time.time()
                 frame_count = 0
-                start_time = time.time()
                 
                 while not self.stop_recording_event.is_set():
                     inRgb = qRgb.tryGet()
@@ -606,45 +607,54 @@ class MultiCameraRecorder:
                     
                     if inRgb is not None:
                         frame = inRgb.getCvFrame()
-                        frame_count += 1
                         
-                        # Add timestamp
-                        timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                        # Frame processing for smooth video
+                        current_time = time.time()
+                        time_since_last = current_time - last_frame_time
                         
-                        # Add frame counter for debugging
-                        elapsed_time = time.time() - start_time
-                        actual_fps = frame_count / elapsed_time if elapsed_time > 0 else 0
-                        cv2.putText(frame, f"Frame: {frame_count} ({actual_fps:.1f} FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
-                        
-                        # Skeleton detection and processing (non-blocking)
-                        if self.skeleton_enabled and self.pose_detector:
-                            try:
-                                # Convert BGR to RGB for MediaPipe
-                                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                
-                                # Create MediaPipe image
-                                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-                                
-                                # Detect pose landmarks
-                                detection_result = self.pose_detector.detect(mp_image)
-                                
-                                # Draw landmarks on frame
-                                frame_with_skeleton = self.draw_landmarks_on_frame(frame, detection_result)
-                                
-                                # Process and save skeleton data
-                                self.process_skeleton_data(detection_result, time.time())
-                                
-                                # Write frame with skeleton overlay
-                                out.write(frame_with_skeleton)
-                                
-                            except Exception as e:
-                                print(f"Error in skeleton processing: {e}")
-                                # Fallback to original frame
+                        # Process frames at 15 FPS for smooth video
+                        if time_since_last >= frame_interval:
+                            last_frame_time = current_time
+                            frame_count += 1
+                            
+                            # Add timestamp
+                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            cv2.putText(frame, timestamp_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                            
+                            # Add frame counter for debugging
+                            cv2.putText(frame, f"Frame: {frame_count} (30 FPS)", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                            
+                            # Skeleton detection and processing
+                            if self.skeleton_enabled and self.pose_detector:
+                                try:
+                                    # Convert BGR to RGB for MediaPipe
+                                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    
+                                    # Create MediaPipe image
+                                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                                    
+                                    # Detect pose landmarks
+                                    detection_result = self.pose_detector.detect(mp_image)
+                                    
+                                    # Draw landmarks on frame
+                                    frame_with_skeleton = self.draw_landmarks_on_frame(frame, detection_result)
+                                    
+                                    # Process and save skeleton data
+                                    self.process_skeleton_data(detection_result, current_time)
+                                    
+                                    # Write frame with skeleton overlay
+                                    out.write(frame_with_skeleton)
+                                    
+                                except Exception as e:
+                                    print(f"Error in skeleton processing: {e}")
+                                    # Fallback to original frame
+                                    out.write(frame)
+                            else:
+                                # Write original frame if skeleton is disabled
                                 out.write(frame)
-                        else:
-                            # Write original frame if skeleton is disabled
-                            out.write(frame)
+                            
+                            # Small sleep to maintain timing
+                            time.sleep(0.01)  # 10ms sleep for 15 FPS
                     
                     if inImu is not None:
                         imuPackets = inImu.packets
