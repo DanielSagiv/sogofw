@@ -304,7 +304,7 @@ class SynchronizedRecorder:
                                     print(f"[SAMPLING] cam1: {len(self.camera_frames['cam1'])} frames at {timestamp_str}")
                                 last_sample_time = current_time
                                 frame_count += 1
-                                                        else:
+                            else:
                                 print(f"❌ Failed to read frame from cam1 MJPEG file")
                             cap.release()
                         else:
