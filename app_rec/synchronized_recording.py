@@ -172,142 +172,152 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 1 (camera 0) frame sampling"""
         print("CSI Camera 1 thread starting...")
         
-        # Try different device paths for camera 0
-        device_paths = ["/dev/video0", "/dev/video2", "/dev/video4"]
-        cap = None
+        # Use rpicam-vid to record MJPEG and extract frames
+        timestamp = self.get_timestamp()
+        mjpeg_filename = f"camera1_{timestamp}.mjpeg"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        for device_path in device_paths:
-            print(f"Trying CSI Camera 1 at {device_path}")
-            cap = cv2.VideoCapture(device_path)
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret:
-                    print(f"✅ CSI Camera 1 opened successfully at {device_path}")
-                    break
-                else:
-                    cap.release()
-                    cap = None
-            else:
-                cap.release()
-                cap = None
+        # Command to record MJPEG
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
-        if cap is None or not cap.isOpened():
-            print("❌ Failed to open CSI Camera 1 on any device path")
-            return
-        
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
-        
-        frame_count = 0
-        last_sample_time = 0
-        sample_interval = 0.5  # Sample every 0.5 seconds
-        
-        while not self.stop_event.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                print("❌ Failed to read frame from CSI Camera 1")
-                # Try to recover
-                time.sleep(0.1)
-                continue
+        try:
+            print(f"Starting CSI Camera 1 recording: {cmd}")
             
-            current_time = time.time()
+            # Start rpicam-vid process
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
             
-            # Add timestamp and frame number
-            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            # Wait for file to start being created
+            time.sleep(1.0)
             
-            # Sample frame if sampling is active and 0.5 seconds have passed
-            if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
-                with self.frame_locks["CSI Cam 0"]:
-                    self.camera_frames["CSI Cam 0"].append({
-                        'frame': frame.copy(),
-                        'frame_number': frame_count,
-                        'timestamp': current_time,
-                        'timestamp_str': timestamp_str
-                    })
-                    print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
-                last_sample_time = current_time
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                print(f"❌ CSI Camera 1 failed to start. stderr: {stderr.decode()}")
+                return
             
-            frame_count += 1
+            print("✅ CSI Camera 1 recording started successfully")
             
-            # Small delay to maintain frame rate
-            time.sleep(0.01)
+            # Extract frames from MJPEG file every 0.5 seconds
+            frame_count = 0
+            last_sample_time = 0
+            sample_interval = 0.5
+            
+            while not self.stop_event.is_set() and process.poll() is None:
+                current_time = time.time()
+                
+                # Sample frame if sampling is active and 0.5 seconds have passed
+                if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
+                    # Read the latest frame from the MJPEG file
+                    cap = cv2.VideoCapture(str(mjpeg_filepath))
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        if ret:
+                            # Add timestamp and frame number
+                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                            
+                            with self.frame_locks["CSI Cam 0"]:
+                                self.camera_frames["CSI Cam 0"].append({
+                                    'frame': frame.copy(),
+                                    'frame_number': frame_count,
+                                    'timestamp': current_time,
+                                    'timestamp_str': timestamp_str
+                                })
+                                print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
+                            last_sample_time = current_time
+                            frame_count += 1
+                        cap.release()
+                
+                time.sleep(0.1)  # Check every 100ms
+            
+            # Stop the process
+            process.terminate()
+            process.wait()
+            
+        except Exception as e:
+            print(f"❌ Error in CSI Camera 1 thread: {e}")
         
-        cap.release()
         print("CSI Camera 1 thread stopped")
     
     def csi_camera2_thread(self):
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        # Try different device paths for camera 1
-        device_paths = ["/dev/video1", "/dev/video3", "/dev/video5"]
-        cap = None
+        # Use rpicam-vid to record MJPEG and extract frames
+        timestamp = self.get_timestamp()
+        mjpeg_filename = f"camera2_{timestamp}.mjpeg"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        for device_path in device_paths:
-            print(f"Trying CSI Camera 2 at {device_path}")
-            cap = cv2.VideoCapture(device_path)
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret:
-                    print(f"✅ CSI Camera 2 opened successfully at {device_path}")
-                    break
-                else:
-                    cap.release()
-                    cap = None
-            else:
-                cap.release()
-                cap = None
+        # Command to record MJPEG
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
-        if cap is None or not cap.isOpened():
-            print("❌ Failed to open CSI Camera 2 on any device path")
-            return
-        
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
-        
-        frame_count = 0
-        last_sample_time = 0
-        sample_interval = 0.5  # Sample every 0.5 seconds
-        
-        while not self.stop_event.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                print("❌ Failed to read frame from CSI Camera 2")
-                # Try to recover
-                time.sleep(0.1)
-                continue
+        try:
+            print(f"Starting CSI Camera 2 recording: {cmd}")
             
-            current_time = time.time()
+            # Start rpicam-vid process
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
             
-            # Add timestamp and frame number
-            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            # Wait for file to start being created
+            time.sleep(1.0)
             
-            # Sample frame if sampling is active and 0.5 seconds have passed
-            if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
-                with self.frame_locks["CSI Cam 1"]:
-                    self.camera_frames["CSI Cam 1"].append({
-                        'frame': frame.copy(),
-                        'frame_number': frame_count,
-                        'timestamp': current_time,
-                        'timestamp_str': timestamp_str
-                    })
-                    print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
-                last_sample_time = current_time
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                print(f"❌ CSI Camera 2 failed to start. stderr: {stderr.decode()}")
+                return
             
-            frame_count += 1
+            print("✅ CSI Camera 2 recording started successfully")
             
-            # Small delay to maintain frame rate
-            time.sleep(0.01)
+            # Extract frames from MJPEG file every 0.5 seconds
+            frame_count = 0
+            last_sample_time = 0
+            sample_interval = 0.5
+            
+            while not self.stop_event.is_set() and process.poll() is None:
+                current_time = time.time()
+                
+                # Sample frame if sampling is active and 0.5 seconds have passed
+                if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
+                    # Read the latest frame from the MJPEG file
+                    cap = cv2.VideoCapture(str(mjpeg_filepath))
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        if ret:
+                            # Add timestamp and frame number
+                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                            
+                            with self.frame_locks["CSI Cam 1"]:
+                                self.camera_frames["CSI Cam 1"].append({
+                                    'frame': frame.copy(),
+                                    'frame_number': frame_count,
+                                    'timestamp': current_time,
+                                    'timestamp_str': timestamp_str
+                                })
+                                print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
+                            last_sample_time = current_time
+                            frame_count += 1
+                        cap.release()
+                
+                time.sleep(0.1)  # Check every 100ms
+            
+            # Stop the process
+            process.terminate()
+            process.wait()
+            
+        except Exception as e:
+            print(f"❌ Error in CSI Camera 2 thread: {e}")
         
-        cap.release()
         print("CSI Camera 2 thread stopped")
     
     def depthai_camera_thread(self):
