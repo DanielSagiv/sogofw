@@ -347,28 +347,34 @@ class SynchronizedRecorder:
         # Command to record MJPEG - try different camera index if needed
         cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
-        # Test if camera 1 is accessible first
-        try:
-            test_cmd = "rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -t 1000 -o /tmp/test_camera2.mjpeg"
-            print(f"Testing camera 1 with: {test_cmd}")
-            test_result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=10)
-            if test_result.returncode == 0:
-                print("Camera 1 test successful")
-                if os.path.exists("/tmp/test_camera2.mjpeg"):
-                    test_size = os.path.getsize("/tmp/test_camera2.mjpeg")
-                    print(f"Test file size: {test_size} bytes")
-                    os.remove("/tmp/test_camera2.mjpeg")
-            else:
-                print(f"Camera 1 test failed. stdout: {test_result.stdout}")
-                print(f"Camera 1 test failed. stderr: {test_result.stderr}")
-                # Try alternative camera index
-                cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-                print(f"Trying alternative camera index: {cmd}")
-        except Exception as e:
-            print(f"Camera 1 test error: {e}")
-            # Try alternative camera index
-            cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-            print(f"Trying alternative camera index: {cmd}")
+        # Test available cameras and find the best one
+        available_cameras = []
+        for camera_idx in [1, 2, 3]:  # Try camera 1, 2, 3
+            try:
+                test_cmd = f"rpicam-vid --camera {camera_idx} --codec mjpeg --nopreview --inline -t 2000 -o /tmp/test_camera{camera_idx}.mjpeg"
+                print(f"Testing camera {camera_idx} with: {test_cmd}")
+                test_result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=15)
+                if test_result.returncode == 0:
+                    if os.path.exists(f"/tmp/test_camera{camera_idx}.mjpeg"):
+                        test_size = os.path.getsize(f"/tmp/test_camera{camera_idx}.mjpeg")
+                        print(f"Camera {camera_idx} test successful - file size: {test_size} bytes")
+                        available_cameras.append(camera_idx)
+                        os.remove(f"/tmp/test_camera{camera_idx}.mjpeg")
+                    else:
+                        print(f"Camera {camera_idx} test failed - no output file")
+                else:
+                    print(f"Camera {camera_idx} test failed. stderr: {test_result.stderr}")
+            except Exception as e:
+                print(f"Camera {camera_idx} test error: {e}")
+        
+        # Use the first available camera, or default to camera 1
+        if available_cameras:
+            selected_camera = available_cameras[0]
+            print(f"✅ Using camera {selected_camera} for cam2")
+            cmd = f"rpicam-vid --camera {selected_camera} --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        else:
+            print("⚠️ No cameras available, defaulting to camera 1")
+            cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
@@ -381,8 +387,8 @@ class SynchronizedRecorder:
                 stderr=subprocess.PIPE
             )
             
-            # Wait for file to start being created
-            time.sleep(1.0)
+            # Wait for file to start being created and check process status
+            time.sleep(2.0)
             
             if process.poll() is not None:
                 stdout, stderr = process.communicate()
@@ -400,12 +406,19 @@ class SynchronizedRecorder:
                     stderr=subprocess.PIPE
                 )
                 
-                time.sleep(2.0)
+                time.sleep(3.0)
                 
                 if process.poll() is not None:
                     stdout, stderr = process.communicate()
                     print(f"❌ CSI Camera 2 failed with alternative approach. stderr: {stderr.decode()}")
                     return
+            
+            # Check if MJPEG file is being created
+            if mjpeg_filepath.exists():
+                initial_size = mjpeg_filepath.stat().st_size
+                print(f"✅ MJPEG file created, initial size: {initial_size} bytes")
+            else:
+                print(f"⚠️ MJPEG file not created yet: {mjpeg_filepath}")
             
             print("✅ CSI Camera 2 recording started successfully")
             
