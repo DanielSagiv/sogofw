@@ -1,0 +1,591 @@
+#!/usr/bin/env python3
+"""
+Synchronized Multi-Camera Recording System with Master Clock
+Samples frames from all cameras simultaneously using OS clock synchronization
+"""
+
+import cv2
+import depthai as dai
+import time
+import json
+import os
+import datetime
+import threading
+import subprocess
+import signal
+import sys
+import serial
+from pathlib import Path
+from collections import deque
+import numpy as np
+
+# LCD Display (optional)
+try:
+    from grove_lcd_rgb import set_text, set_rgb
+    LCD_AVAILABLE = True
+    print("LCD display enabled")
+except Exception as e:
+    print(f"LCD display not available: {e}")
+    
+    # Create dummy functions if LCD is not available
+    def set_text(text):
+        print(f"LCD: {text}")
+    
+    def set_rgb(r, g, b):
+        print(f"LCD RGB: ({r}, {g}, {b})")
+
+# Suppress TensorFlow warnings
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+class SynchronizedRecorder:
+    def __init__(self):
+        self.recording = False
+        self.sampling_active = False
+        self.stop_event = threading.Event()
+        
+        # Recording paths
+        self.recordings_dir = Path("recordings")
+        self.recordings_dir.mkdir(exist_ok=True)
+        
+        # Frame buffers for each camera
+        self.camera_frames = {
+            "cam1": deque(),
+            "cam2": deque(), 
+            "cam3": deque()
+        }
+        
+        # Camera processes and threads
+        self.camera1_process = None
+        self.camera2_process = None
+        self.depthai_device = None
+        self.depthai_thread = None
+        
+        # Thread locks for thread safety
+        self.frame_locks = {
+            "cam1": threading.Lock(),
+            "cam2": threading.Lock(),
+            "cam3": threading.Lock()
+        }
+        
+        # Master Clock System
+        self.sample_interval = 0.5  # 0.5 seconds
+        self.master_clock_lock = threading.Lock()
+        self.next_sample_time = 0
+        self.sample_count = 0
+        
+        # Initialize LCD
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(0, 128, 64)  # Green color
+                set_text("SOGO READY")
+                print("LCD initialized successfully")
+            except Exception as e:
+                print(f"LCD initialization failed: {e}")
+        else:
+            print("LCD not available - using console output")
+        
+        print("Synchronized Multi-Camera Recording System Initialized")
+        print("Press Enter to start frame sampling")
+        print("Press Enter again to stop sampling and create videos")
+        print("Press Ctrl+C to exit")
+        
+        # Check for ffmpeg
+        self.check_ffmpeg()
+        
+        # Clean up any existing camera processes
+        self.cleanup_existing_cameras()
+        
+        print("Camera availability will be checked when recording starts")
+    
+    def check_ffmpeg(self):
+        """Check if ffmpeg is available"""
+        try:
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            print("✅ ffmpeg is available")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("❌ ffmpeg not found. Please install ffmpeg")
+    
+    def cleanup_existing_cameras(self):
+        """Kill any existing camera processes that might be using the cameras"""
+        print("Cleaning up any existing camera processes...")
+        
+        try:
+            # Kill any rpicam-vid processes
+            result = subprocess.run("pkill -f rpicam-vid", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✅ Killed existing rpicam-vid processes")
+            else:
+                print("ℹ️  No existing rpicam-vid processes found")
+            
+            # Wait a moment for processes to be killed
+            time.sleep(2.0)
+            
+            # Also try to kill any libcamera processes
+            result = subprocess.run("pkill -f libcamera", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✅ Killed existing libcamera processes")
+            
+            time.sleep(1.0)
+            
+        except Exception as e:
+            print(f"Warning: Could not cleanup processes: {e}")
+        
+        print("Camera cleanup complete")
+    
+    def initialize_master_clock(self):
+        """Initialize the master clock for synchronized sampling"""
+        current_time = time.time()
+        # Calculate the next 0.5-second boundary
+        self.next_sample_time = ((current_time // self.sample_interval) + 1) * self.sample_interval
+        self.sample_count = 0
+        print(f"🕐 Master clock initialized. Next sample at: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+    
+    def should_sample_now(self):
+        """Check if it's time to sample based on master clock"""
+        current_time = time.time()
+        if current_time >= self.next_sample_time:
+            with self.master_clock_lock:
+                # Update to next sample time
+                self.next_sample_time += self.sample_interval
+                self.sample_count += 1
+                return True
+        return False
+    
+    def get_timestamp(self):
+        """Get current timestamp for filenames"""
+        return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    def start_camera_threads(self):
+        """Start all camera threads"""
+        print("Starting camera threads for frame sampling...")
+        
+        # Initialize master clock
+        self.initialize_master_clock()
+        
+        # Start camera threads with delays to prevent conflicts
+        print("Starting CSI Camera 1...")
+        self.camera1_thread = threading.Thread(target=self.csi_camera1_thread)
+        self.camera1_thread.start()
+        time.sleep(2.0)
+        
+        print("Starting CSI Camera 2...")
+        self.camera2_thread = threading.Thread(target=self.csi_camera2_thread)
+        self.camera2_thread.start()
+        time.sleep(2.0)
+        
+        print("Starting DepthAI Camera...")
+        self.depthai_thread = threading.Thread(target=self.depthai_camera_thread)
+        self.depthai_thread.start()
+        
+        print("All camera threads started and ready for sampling")
+    
+    def csi_camera1_thread(self):
+        """Thread for CSI Camera 1 (camera 0) frame sampling"""
+        print("CSI Camera 1 thread starting...")
+        
+        # Kill any existing rpicam-vid processes for camera 0
+        try:
+            subprocess.run("pkill -f 'rpicam-vid.*camera 0'", shell=True, capture_output=True)
+            time.sleep(1.0)
+            print("Killed any existing camera 0 processes")
+        except Exception as e:
+            print(f"Warning: Could not kill existing processes: {e}")
+        
+        # Use rpicam-vid to record MJPEG and extract frames
+        timestamp = self.get_timestamp()
+        mjpeg_filename = f"camera1_{timestamp}.mjpeg"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        
+        # Command to record MJPEG
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        
+        try:
+            print(f"Starting CSI Camera 1 recording: {cmd}")
+            
+            # Start rpicam-vid process
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
+            
+            # Wait for file to start being created
+            time.sleep(1.0)
+            
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                print(f"❌ CSI Camera 1 failed to start. stderr: {stderr.decode()}")
+                return
+            
+            print("✅ CSI Camera 1 recording started successfully")
+            
+            # Extract frames from MJPEG file using master clock
+            frame_count = 0
+            
+            print("CSI Camera 1 monitoring loop started")
+            
+            while not self.stop_event.is_set():
+                current_time = time.time()
+                
+                # Check if process is still running
+                if process.poll() is not None:
+                    print("❌ CSI Camera 1 process stopped unexpectedly")
+                    break
+                
+                # Sample frame if master clock says it's time
+                if self.sampling_active and self.should_sample_now():
+                    # Check if MJPEG file exists and has content
+                    if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
+                        # Read the latest frame from the MJPEG file
+                        cap = cv2.VideoCapture(str(mjpeg_filepath))
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                # Add timestamp, frame number, and camera label
+                                timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                
+                                with self.frame_locks["cam1"]:
+                                    self.camera_frames["cam1"].append({
+                                        'frame': frame.copy(),
+                                        'frame_number': frame_count,
+                                        'timestamp': current_time,
+                                        'timestamp_str': timestamp_str
+                                    })
+                                    print(f"[SAMPLING] cam1: {len(self.camera_frames['cam1'])} frames at {timestamp_str}")
+                                frame_count += 1
+                            else:
+                                print(f"❌ Failed to read frame from cam1 MJPEG file")
+                            cap.release()
+                        else:
+                            print(f"❌ Failed to open cam1 MJPEG file for reading")
+                    else:
+                        print(f"❌ cam1 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
+                
+                time.sleep(0.01)  # Check every 10ms for better responsiveness
+            
+            # Stop the process
+            process.terminate()
+            process.wait()
+            
+        except Exception as e:
+            print(f"❌ Error in CSI Camera 1 thread: {e}")
+        
+        print("CSI Camera 1 thread stopped")
+    
+    def csi_camera2_thread(self):
+        """Thread for CSI Camera 2 (camera 1) frame sampling"""
+        print("CSI Camera 2 thread starting...")
+        
+        # Kill any existing rpicam-vid processes for camera 1
+        try:
+            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
+            time.sleep(1.0)
+            print("Killed any existing camera 1 processes")
+        except Exception as e:
+            print(f"Warning: Could not kill existing processes: {e}")
+        
+        # Use rpicam-vid to record MJPEG and extract frames
+        timestamp = self.get_timestamp()
+        mjpeg_filename = f"camera2_{timestamp}.mjpeg"
+        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        
+        # Command to record MJPEG - use camera 1 directly
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        
+        try:
+            print(f"Starting CSI Camera 2 recording: {cmd}")
+            
+            # Start rpicam-vid process
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
+            
+            # Wait for file to start being created
+            time.sleep(2.0)
+            
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                print(f"❌ CSI Camera 2 failed to start. stderr: {stderr.decode()}")
+                return
+            
+            # Check if MJPEG file is being created
+            if mjpeg_filepath.exists():
+                initial_size = mjpeg_filepath.stat().st_size
+                print(f"✅ MJPEG file created, initial size: {initial_size} bytes")
+            else:
+                print(f"⚠️ MJPEG file not created yet: {mjpeg_filepath}")
+            
+            print("✅ CSI Camera 2 recording started successfully")
+            
+            # Extract frames from MJPEG file using master clock
+            frame_count = 0
+            
+            print("CSI Camera 2 monitoring loop started")
+            
+            while not self.stop_event.is_set():
+                current_time = time.time()
+                
+                # Check if process is still running
+                if process.poll() is not None:
+                    print("❌ CSI Camera 2 process stopped unexpectedly")
+                    break
+                
+                # Sample frame if master clock says it's time
+                if self.sampling_active and self.should_sample_now():
+                    # Check if MJPEG file exists and has content
+                    current_size = mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0
+                    if mjpeg_filepath.exists() and current_size > 0:
+                        # Read the latest frame from the MJPEG file
+                        cap = cv2.VideoCapture(str(mjpeg_filepath))
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                # Add timestamp, frame number, and camera label
+                                timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                
+                                with self.frame_locks["cam2"]:
+                                    self.camera_frames["cam2"].append({
+                                        'frame': frame.copy(),
+                                        'frame_number': frame_count,
+                                        'timestamp': current_time,
+                                        'timestamp_str': timestamp_str
+                                    })
+                                    print(f"[SAMPLING] cam2: {len(self.camera_frames['cam2'])} frames at {timestamp_str}")
+                                frame_count += 1
+                            else:
+                                print(f"❌ Failed to read frame from cam2 MJPEG file")
+                            cap.release()
+                        else:
+                            print(f"❌ Failed to open cam2 MJPEG file for reading")
+                    else:
+                        print(f"❌ cam2 MJPEG file not ready (size: {current_size})")
+                
+                time.sleep(0.01)  # Check every 10ms for better responsiveness
+            
+            # Stop the process
+            process.terminate()
+            process.wait()
+            
+        except Exception as e:
+            print(f"❌ Error in CSI Camera 2 thread: {e}")
+        
+        print("CSI Camera 2 thread stopped")
+    
+    def depthai_camera_thread(self):
+        """Thread for DepthAI camera frame sampling"""
+        print("DepthAI camera thread starting...")
+        
+        try:
+            # Create pipeline
+            pipeline = dai.Pipeline()
+            
+            # Define sources and outputs
+            camRgb = pipeline.create(dai.node.ColorCamera)
+            xlinkOut = pipeline.create(dai.node.XLinkOut)
+            
+            xlinkOut.setStreamName("rgb")
+            
+            # Camera properties
+            camRgb.setPreviewSize(640, 480)
+            camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+            camRgb.setInterleaved(False)
+            camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+            
+            # Linking
+            camRgb.preview.link(xlinkOut.input)
+            
+            # Connect to device
+            with dai.Device(pipeline) as device:
+                print("DepthAI device connected successfully!")
+                
+                # Output queue
+                qRgb = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
+                
+                frame_count = 0
+                
+                while not self.stop_event.is_set():
+                    inRgb = qRgb.tryGet()
+                    
+                    if inRgb is not None:
+                        frame = inRgb.getCvFrame()
+                        current_time = time.time()
+                        
+                        # Add timestamp, frame number, and camera label
+                        timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                        cv2.putText(frame, "CAM3", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                        
+                        # Sample frame if master clock says it's time
+                        if self.sampling_active and self.should_sample_now():
+                            with self.frame_locks["cam3"]:
+                                self.camera_frames["cam3"].append({
+                                    'frame': frame.copy(),
+                                    'frame_number': frame_count,
+                                    'timestamp': current_time,
+                                    'timestamp_str': timestamp_str
+                                })
+                                print(f"[SAMPLING] cam3: {len(self.camera_frames['cam3'])} frames at {timestamp_str}")
+                        
+                        frame_count += 1
+                    
+                    # Small delay to maintain frame rate
+                    time.sleep(0.01)
+                
+        except Exception as e:
+            print(f"Error in DepthAI camera thread: {e}")
+        
+        print("DepthAI camera thread stopped")
+    
+    def start_sampling(self):
+        """Start frame sampling from all cameras"""
+        print("Starting frame sampling from all cameras...")
+        self.sampling_active = True
+        
+        # Reinitialize master clock
+        self.initialize_master_clock()
+        
+        # Update LCD
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(255, 0, 0)  # Red color for recording
+                set_text("SAMPLING")
+            except Exception as e:
+                print(f"LCD update failed: {e}")
+        
+        print("Frame sampling active. Press Enter to stop sampling and create videos...")
+    
+    def stop_sampling(self):
+        """Stop frame sampling and create videos"""
+        print("Stopping frame sampling...")
+        self.sampling_active = False
+        
+        # Update LCD
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(0, 128, 64)  # Green color for ready
+                set_text("PROCESSING")
+            except Exception as e:
+                print(f"LCD update failed: {e}")
+        
+        # Create videos from sampled frames
+        self.create_videos_from_samples()
+    
+    def create_videos_from_samples(self):
+        """Create videos from the sampled frames"""
+        print("Creating videos from sampled frames...")
+        
+        timestamp = self.get_timestamp()
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        for camera_name, frames in self.camera_frames.items():
+            if len(frames) == 0:
+                print(f"[WARNING] No frames captured for {camera_name}")
+                continue
+            
+            # Create video filename
+            video_filename = f"{camera_name}_{timestamp}.mp4"
+            video_filepath = self.recordings_dir / video_filename
+            
+            # Get frame dimensions from first frame
+            first_frame = frames[0]['frame']
+            height, width = first_frame.shape[:2]
+            
+            # Create video writer
+            out = cv2.VideoWriter(str(video_filepath), fourcc, 30, (width, height))
+            
+            print(f"[PROCESSING] Creating video for {camera_name}: {len(frames)} frames")
+            
+            # Write all frames to video
+            for frame_data in frames:
+                out.write(frame_data['frame'])
+            
+            out.release()
+            print(f"[SUCCESS] Video saved: {video_filepath}")
+        
+        print("[DONE] All videos created successfully!")
+        
+        # Update LCD
+        if LCD_AVAILABLE:
+            try:
+                set_rgb(0, 255, 0)  # Green color for success
+                set_text("DONE")
+            except Exception as e:
+                print(f"LCD update failed: {e}")
+    
+    def run(self):
+        """Main run loop"""
+        try:
+            # Start camera threads
+            self.start_camera_threads()
+            
+            while True:
+                try:
+                    user_input = input("Press Enter to start frame sampling...")
+                    
+                    if user_input.lower() == 'q':
+                        break
+                    
+                    if not self.sampling_active:
+                        self.start_sampling()
+                    else:
+                        self.stop_sampling()
+                        
+                        # Ask if user wants to continue
+                        continue_input = input("Press Enter to start new recording, or 'q' to quit: ")
+                        if continue_input.lower() == 'q':
+                            break
+                        
+                        # Reset frame buffers for new recording
+                        for camera_name in self.camera_frames:
+                            self.camera_frames[camera_name].clear()
+                
+                except KeyboardInterrupt:
+                    break
+                except EOFError:
+                    break
+        
+        except KeyboardInterrupt:
+            print("\nInterrupted by user")
+        finally:
+            self.cleanup()
+    
+    def cleanup(self):
+        """Cleanup resources"""
+        print("Cleaning up...")
+        
+        # Stop sampling
+        self.sampling_active = False
+        self.stop_event.set()
+        
+        # Wait for threads to finish
+        if hasattr(self, 'camera1_thread') and self.camera1_thread:
+            self.camera1_thread.join(timeout=5.0)
+        if hasattr(self, 'camera2_thread') and self.camera2_thread:
+            self.camera2_thread.join(timeout=5.0)
+        if hasattr(self, 'depthai_thread') and self.depthai_thread:
+            self.depthai_thread.join(timeout=5.0)
+        
+        # Kill any remaining camera processes
+        try:
+            subprocess.run("pkill -f rpicam-vid", shell=True, capture_output=True)
+            subprocess.run("pkill -f libcamera", shell=True, capture_output=True)
+        except Exception as e:
+            print(f"Warning: Could not cleanup processes: {e}")
+        
+        print("Cleanup complete")
+
+if __name__ == "__main__":
+    recorder = SynchronizedRecorder()
+    recorder.run()
