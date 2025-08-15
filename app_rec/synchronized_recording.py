@@ -205,6 +205,12 @@ class SynchronizedRecorder:
                 print(f"⏰ Waiting for sample - Time until: {time_until_sample:.3f}s")
             return False
     
+    def update_next_sample_time(self):
+        """Update the next sample time - only called by the first camera that samples"""
+        with self.sampling_lock:
+            self.next_sample_time += self.sample_interval
+            print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+    
     def start_camera_threads(self):
         """Start all camera threads for frame sampling"""
         print("Starting camera threads for frame sampling...")
@@ -305,11 +311,14 @@ class SynchronizedRecorder:
                     break
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                should_sample = False
                 with self.sampling_lock:
-                    should_sample = self.sampling_active and self.should_sample_now()
-                    if should_sample:
-                        self.next_sample_time += self.sample_interval
-                        print(f"🔄 cam1: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                    if self.sampling_active and current_time >= self.next_sample_time:
+                        should_sample = True
+                        # Only update the clock once per sampling cycle
+                        if current_time >= self.next_sample_time:
+                            self.next_sample_time += self.sample_interval
+                            print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                 
                 if should_sample:
                     print(f"📸 cam1: Starting frame capture...")
@@ -402,12 +411,27 @@ class SynchronizedRecorder:
                 print(f"❌ CSI Camera 2 failed to start. stderr: {stderr.decode()}")
                 return
             
+            # Wait longer for MJPEG file to be created
+            print("⏳ Waiting for cam2 MJPEG file to be created...")
+            max_wait_time = 10.0  # Wait up to 10 seconds
+            wait_start = time.time()
+            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
+                time.sleep(0.5)
+                print(f"⏳ Still waiting for cam2 MJPEG file... ({time.time() - wait_start:.1f}s)")
+            
             # Check if MJPEG file is being created
             if mjpeg_filepath.exists():
                 initial_size = mjpeg_filepath.stat().st_size
-                print(f"✅ MJPEG file created, initial size: {initial_size} bytes")
+                print(f"✅ cam2: MJPEG file created, initial size: {initial_size} bytes")
             else:
-                print(f"⚠️ MJPEG file not created yet: {mjpeg_filepath}")
+                print(f"❌ cam2: MJPEG file not created after {max_wait_time}s - process may have failed")
+                # Check if process is still running
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    print(f"❌ cam2: Process failed. stderr: {stderr.decode()}")
+                    return
+                else:
+                    print(f"⚠️ cam2: Process still running but no file created - continuing anyway")
             
             print("✅ CSI Camera 2 recording started successfully")
             
@@ -425,11 +449,14 @@ class SynchronizedRecorder:
                     break
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                should_sample = False
                 with self.sampling_lock:
-                    should_sample = self.sampling_active and self.should_sample_now()
-                    if should_sample:
-                        self.next_sample_time += self.sample_interval
-                        print(f"🔄 cam2: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                    if self.sampling_active and current_time >= self.next_sample_time:
+                        should_sample = True
+                        # Only update the clock once per sampling cycle
+                        if current_time >= self.next_sample_time:
+                            self.next_sample_time += self.sample_interval
+                            print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                 
                 if should_sample:
                     print(f"📸 cam2: Starting frame capture...")
@@ -531,11 +558,14 @@ class SynchronizedRecorder:
                         cv2.putText(frame, "CAM3", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         
                         # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                        should_sample = False
                         with self.sampling_lock:
-                            should_sample = self.sampling_active and self.should_sample_now()
-                            if should_sample:
-                                self.next_sample_time += self.sample_interval
-                                print(f"🔄 cam3: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                            if self.sampling_active and current_time >= self.next_sample_time:
+                                should_sample = True
+                                # Only update the clock once per sampling cycle
+                                if current_time >= self.next_sample_time:
+                                    self.next_sample_time += self.sample_interval
+                                    print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                         
                         if should_sample:
                             print(f"📸 cam3: Starting frame capture...")
