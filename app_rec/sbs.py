@@ -24,20 +24,44 @@ camera_frames = {
 sampling_active = False
 cameras_ready = False
 
-def start_rpicam_preview(index, name):
-    cmd = [
-        "rpicam-vid",
-        "--camera", str(index),
-        "--width", str(WIDTH),
-        "--height", str(HEIGHT),
-        "--framerate", str(FPS),
-        "--preview", "-",
-        "--nopreview", "0",
-        "--fullscreen", "0",
-        "--info-text", name,
-        "-t", "0",
-    ]
-    return subprocess.Popen(cmd, preexec_fn=os.setsid)
+# Create recordings directory
+RECORDINGS_DIR = "recordings"
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
+
+def start_csi_camera_preview(index, name):
+    """Start CSI camera preview and frame capture using OpenCV"""
+    def run():
+        # Use OpenCV to capture from CSI camera
+        cap = cv2.VideoCapture(index)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+        cap.set(cv2.CAP_PROP_FPS, FPS)
+        
+        global cameras_ready
+        cameras_ready = True
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print(f"[ERROR] Failed to read frame from {name}")
+                break
+                
+            cv2.imshow(name, frame)
+            
+            # Sample frame if sampling is active
+            if sampling_active:
+                camera_frames[name].append(frame.copy())
+                print(f"[SAMPLING] {name}: {len(camera_frames[name])} frames")
+            
+            if cv2.waitKey(1) == 27:  # Esc to close
+                break
+        
+        cap.release()
+        cv2.destroyWindow(name)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
 
 def start_depthai_preview(name):
     def run():
@@ -99,8 +123,8 @@ def create_videos_from_samples():
             print(f"[WARNING] No frames captured for {camera_name}")
             continue
             
-        # Create video filename
-        video_filename = f"{camera_name.replace(' ', '_').lower()}_sample.mp4"
+        # Create video filename in recordings directory
+        video_filename = os.path.join(RECORDINGS_DIR, f"{camera_name.replace(' ', '_').lower()}_sample.mp4")
         
         # Get frame dimensions from first frame
         first_frame = frames[0]
@@ -123,9 +147,9 @@ def create_videos_from_samples():
 def main():
     print("[INFO] Launching all 3 camera previews...")
 
-    # Start CSI previews via rpicam-vid
-    p0 = start_rpicam_preview(0, "CSI Cam 0")
-    p1 = start_rpicam_preview(1, "CSI Cam 1")
+    # Start CSI camera previews using OpenCV
+    csi_thread_0 = start_csi_camera_preview(0, "CSI Cam 0")
+    csi_thread_1 = start_csi_camera_preview(1, "CSI Cam 1")
 
     # Start DepthAI preview in a thread
     oak_thread = start_depthai_preview("DepthAI Cam")
@@ -138,13 +162,6 @@ def main():
 
     # Start frame sampling
     sample_frames()
-
-    # Cleanup CSI camera previews
-    for p in [p0, p1]:
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGINT)
-        except Exception:
-            pass
 
     print("[DONE] Exiting.")
 
