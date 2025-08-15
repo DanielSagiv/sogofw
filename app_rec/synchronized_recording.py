@@ -49,9 +49,9 @@ class SynchronizedRecorder:
         
         # Frame buffers for each camera
         self.camera_frames = {
-            "CSI Cam 0": deque(),
-            "CSI Cam 1": deque(), 
-            "DepthAI Cam": deque()
+            "cam1": deque(),
+            "cam2": deque(), 
+            "cam3": deque()
         }
         
         # Camera processes and threads
@@ -62,9 +62,9 @@ class SynchronizedRecorder:
         
         # Thread locks for thread safety
         self.frame_locks = {
-            "CSI Cam 0": threading.Lock(),
-            "CSI Cam 1": threading.Lock(),
-            "DepthAI Cam": threading.Lock()
+            "cam1": threading.Lock(),
+            "cam2": threading.Lock(),
+            "cam3": threading.Lock()
         }
         
         # Initialize LCD
@@ -288,32 +288,33 @@ class SynchronizedRecorder:
                         if cap.isOpened():
                             ret, frame = cap.read()
                             if ret:
-                                # Add timestamp and frame number
+                                # Add timestamp, frame number, and camera label
                                 timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                 cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                                 cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                                 
-                                with self.frame_locks["CSI Cam 0"]:
-                                    self.camera_frames["CSI Cam 0"].append({
+                                with self.frame_locks["cam1"]:
+                                    self.camera_frames["cam1"].append({
                                         'frame': frame.copy(),
                                         'frame_number': frame_count,
                                         'timestamp': current_time,
                                         'timestamp_str': timestamp_str
                                     })
-                                    print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
+                                    print(f"[SAMPLING] cam1: {len(self.camera_frames['cam1'])} frames at {timestamp_str}")
                                 last_sample_time = current_time
                                 frame_count += 1
-                            else:
-                                print(f"❌ Failed to read frame from CSI Cam 0 MJPEG file")
+                                                        else:
+                                print(f"❌ Failed to read frame from cam1 MJPEG file")
                             cap.release()
                         else:
-                            print(f"❌ Failed to open CSI Cam 0 MJPEG file for reading")
+                            print(f"❌ Failed to open cam1 MJPEG file for reading")
                     else:
-                        print(f"❌ CSI Cam 0 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
+                        print(f"❌ cam1 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
                 else:
                     # Debug: show when not sampling
                     if self.sampling_active:
-                        print(f"CSI Cam 0: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
+                        print(f"cam1: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -343,8 +344,31 @@ class SynchronizedRecorder:
         mjpeg_filename = f"camera2_{timestamp}.mjpeg"
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        # Command to record MJPEG
+        # Command to record MJPEG - try different camera index if needed
         cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        
+        # Test if camera 1 is accessible first
+        try:
+            test_cmd = "rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -t 1000 -o /tmp/test_camera2.mjpeg"
+            print(f"Testing camera 1 with: {test_cmd}")
+            test_result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            if test_result.returncode == 0:
+                print("Camera 1 test successful")
+                if os.path.exists("/tmp/test_camera2.mjpeg"):
+                    test_size = os.path.getsize("/tmp/test_camera2.mjpeg")
+                    print(f"Test file size: {test_size} bytes")
+                    os.remove("/tmp/test_camera2.mjpeg")
+            else:
+                print(f"Camera 1 test failed. stdout: {test_result.stdout}")
+                print(f"Camera 1 test failed. stderr: {test_result.stderr}")
+                # Try alternative camera index
+                cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+                print(f"Trying alternative camera index: {cmd}")
+        except Exception as e:
+            print(f"Camera 1 test error: {e}")
+            # Try alternative camera index
+            cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+            print(f"Trying alternative camera index: {cmd}")
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
@@ -409,32 +433,33 @@ class SynchronizedRecorder:
                         if cap.isOpened():
                             ret, frame = cap.read()
                             if ret:
-                                # Add timestamp and frame number
+                                # Add timestamp, frame number, and camera label
                                 timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                 cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                                 cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                                 
-                                with self.frame_locks["CSI Cam 1"]:
-                                    self.camera_frames["CSI Cam 1"].append({
+                                with self.frame_locks["cam2"]:
+                                    self.camera_frames["cam2"].append({
                                         'frame': frame.copy(),
                                         'frame_number': frame_count,
                                         'timestamp': current_time,
                                         'timestamp_str': timestamp_str
                                     })
-                                    print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
+                                    print(f"[SAMPLING] cam2: {len(self.camera_frames['cam2'])} frames at {timestamp_str}")
                                 last_sample_time = current_time
                                 frame_count += 1
                             else:
-                                print(f"❌ Failed to read frame from CSI Cam 1 MJPEG file")
+                                print(f"❌ Failed to read frame from cam2 MJPEG file")
                             cap.release()
                         else:
-                            print(f"❌ Failed to open CSI Cam 1 MJPEG file for reading")
+                            print(f"❌ Failed to open cam2 MJPEG file for reading")
                     else:
-                        print(f"❌ CSI Cam 1 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
+                        print(f"❌ cam2 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
                 else:
                     # Debug: show when not sampling
                     if self.sampling_active:
-                        print(f"CSI Cam 1: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
+                        print(f"cam2: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -489,21 +514,22 @@ class SynchronizedRecorder:
                         frame = inRgb.getCvFrame()
                         current_time = time.time()
                         
-                        # Add timestamp and frame number
+                        # Add timestamp, frame number, and camera label
                         timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                         cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                        cv2.putText(frame, "CAM3", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         
                         # Sample frame if sampling is active and 0.5 seconds have passed
                         if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
-                            with self.frame_locks["DepthAI Cam"]:
-                                self.camera_frames["DepthAI Cam"].append({
+                            with self.frame_locks["cam3"]:
+                                self.camera_frames["cam3"].append({
                                     'frame': frame.copy(),
                                     'frame_number': frame_count,
                                     'timestamp': current_time,
                                     'timestamp_str': timestamp_str
                                 })
-                                print(f"[SAMPLING] DepthAI Cam: {len(self.camera_frames['DepthAI Cam'])} frames at {timestamp_str}")
+                                print(f"[SAMPLING] cam3: {len(self.camera_frames['cam3'])} frames at {timestamp_str}")
                             last_sample_time = current_time
                         
                         frame_count += 1
