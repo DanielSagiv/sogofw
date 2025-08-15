@@ -323,28 +323,40 @@ class SynchronizedRecorder:
                                 cap = cv2.VideoCapture(str(mjpeg_filepath))
                                 if cap.isOpened():
                                     print("🎥 cam1: VideoCapture opened successfully")
-                                    ret, frame = cap.read()
+                                    
+                                    # Read multiple frames to get the latest one
+                                    last_frame = None
+                                    frame_count = 0
+                                    while True:
+                                        ret, frame = cap.read()
+                                        if not ret or frame is None:
+                                            break
+                                        last_frame = frame.copy()
+                                        frame_count += 1
+                                        if frame_count > 10:  # Limit to prevent infinite loop
+                                            break
+                                    
                                     cap.release()
                                     
-                                    if ret and frame is not None:
-                                        print(f"✅ cam1: Frame read successfully, shape: {frame.shape}")
+                                    if last_frame is not None:
+                                        print(f"✅ cam1: Frame read successfully, shape: {last_frame.shape} (read {frame_count} frames)")
                                         
                                         # Add frame number and timestamp overlay
                                         frame_number = len(self.camera_frames["cam1"]) + 1
                                         timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                         
                                         # Add overlays
-                                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                        cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                        cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                        cv2.putText(last_frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                                         
                                         # Store frame with timestamp
                                         with self.frame_locks["cam1"]:
-                                            self.camera_frames["cam1"].append((frame, current_time))
+                                            self.camera_frames["cam1"].append((last_frame, current_time))
                                         
                                         print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam1: Failed to read frame from MJPEG file")
+                                        print(f"❌ cam1: Failed to read any frames from MJPEG file")
                                 else:
                                     print(f"❌ cam1: Failed to open MJPEG file with VideoCapture")
                             except Exception as e:
@@ -447,28 +459,40 @@ class SynchronizedRecorder:
                                 cap = cv2.VideoCapture(str(mjpeg_filepath))
                                 if cap.isOpened():
                                     print("🎥 cam2: VideoCapture opened successfully")
-                                    ret, frame = cap.read()
+                                    
+                                    # Read multiple frames to get the latest one
+                                    last_frame = None
+                                    frame_count = 0
+                                    while True:
+                                        ret, frame = cap.read()
+                                        if not ret or frame is None:
+                                            break
+                                        last_frame = frame.copy()
+                                        frame_count += 1
+                                        if frame_count > 10:  # Limit to prevent infinite loop
+                                            break
+                                    
                                     cap.release()
                                     
-                                    if ret and frame is not None:
-                                        print(f"✅ cam2: Frame read successfully, shape: {frame.shape}")
+                                    if last_frame is not None:
+                                        print(f"✅ cam2: Frame read successfully, shape: {last_frame.shape} (read {frame_count} frames)")
                                         
                                         # Add frame number and timestamp overlay
                                         frame_number = len(self.camera_frames["cam2"]) + 1
                                         timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                         
                                         # Add overlays
-                                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                        cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                        cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                        cv2.putText(last_frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                                         
                                         # Store frame with timestamp
                                         with self.frame_locks["cam2"]:
-                                            self.camera_frames["cam2"].append((frame, current_time))
+                                            self.camera_frames["cam2"].append((last_frame, current_time))
                                         
                                         print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam2: Failed to read frame from MJPEG file")
+                                        print(f"❌ cam2: Failed to read any frames from MJPEG file")
                                 else:
                                     print(f"❌ cam2: Failed to open MJPEG file with VideoCapture")
                             except Exception as e:
