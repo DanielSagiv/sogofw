@@ -156,8 +156,9 @@ class SynchronizedRecorder:
                     print(f"⏰ TIMER: Signaling all cameras to sample at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
                     self.sample_event.set()  # Signal all cameras to sample
                     self.next_sample_time += self.sample_interval
-                    time.sleep(0.2)  # Wait for all cameras to receive the signal
+                    time.sleep(0.3)  # Wait for all cameras to receive the signal
                     self.sample_event.clear()  # Clear the event for next time
+                    time.sleep(0.1)  # Small delay before next cycle
                 else:
                     time.sleep(0.01)  # Check every 10ms
         
@@ -189,27 +190,30 @@ class SynchronizedRecorder:
         """Start all camera threads for frame sampling"""
         print("Starting camera threads for frame sampling...")
         
-        # Start CSI camera threads with delays to avoid conflicts
-        self.camera1_thread = threading.Thread(target=self.csi_camera1_thread, daemon=True)
-        self.camera2_thread = threading.Thread(target=self.csi_camera2_thread, daemon=True)
-        
-        # Start DepthAI thread
-        self.depthai_thread = threading.Thread(target=self.depthai_camera_thread, daemon=True)
-        
-        # Start threads with delays to avoid camera conflicts
+        # Start CSI Camera 1 (camera 0)
         print("Starting CSI Camera 1...")
-        self.camera1_thread.start()
-        time.sleep(2.0)  # Wait 2 seconds between camera starts
+        self.camera_threads["cam1"] = threading.Thread(target=self.csi_camera1_thread)
+        self.camera_threads["cam1"].daemon = True
+        self.camera_threads["cam1"].start()
         
+        # Wait for camera 1 to fully start before starting camera 2
+        time.sleep(3.0)
+        
+        # Start CSI Camera 2 (camera 1)
         print("Starting CSI Camera 2...")
-        self.camera2_thread.start()
-        time.sleep(2.0)  # Wait 2 seconds between camera starts
+        self.camera_threads["cam2"] = threading.Thread(target=self.csi_camera2_thread)
+        self.camera_threads["cam2"].daemon = True
+        self.camera_threads["cam2"].start()
         
+        # Wait for camera 2 to fully start before starting DepthAI
+        time.sleep(3.0)
+        
+        # Start DepthAI Camera
         print("Starting DepthAI Camera...")
-        self.depthai_thread.start()
+        self.camera_threads["cam3"] = threading.Thread(target=self.depthai_camera_thread)
+        self.camera_threads["cam3"].daemon = True
+        self.camera_threads["cam3"].start()
         
-        # Wait for threads to initialize
-        time.sleep(2.0)
         print("All camera threads started and ready for sampling")
     
     def csi_camera1_thread(self):
@@ -351,11 +355,11 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        # Kill any existing rpicam-vid processes for camera 2
+        # Kill any existing rpicam-vid processes for camera 1
         try:
-            subprocess.run("pkill -f 'rpicam-vid.*camera 2'", shell=True, capture_output=True)
+            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
             time.sleep(1.0)
-            print("Killed any existing camera 2 processes")
+            print("Killed any existing camera 1 processes")
         except Exception as e:
             print(f"Warning: Could not kill existing processes: {e}")
         
@@ -364,8 +368,8 @@ class SynchronizedRecorder:
         mjpeg_filename = f"camera2_{timestamp}.mjpeg"
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        # Command to record MJPEG - use camera 2
-        cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Command to record MJPEG - use camera 1
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
@@ -592,19 +596,25 @@ class SynchronizedRecorder:
     
     def stop_sampling(self):
         """Stop frame sampling and create videos"""
-        print("Stopping frame sampling...")
+        print("\nStopping frame sampling...")
         self.sampling_active = False
+        self.stop_event.set()
         
-        # Update LCD
-        if LCD_AVAILABLE:
-            try:
-                set_rgb(0, 128, 64)  # Green color for ready
-                set_text("PROCESSING")
-            except Exception as e:
-                print(f"LCD update failed: {e}")
+        # Stop the sampling timer
+        if hasattr(self, 'sampling_timer'):
+            print("Stopping sampling timer...")
         
-        # Create videos from sampled frames
-        self.create_videos_from_samples()
+        # Wait for all camera threads to finish
+        print("Waiting for camera threads to finish...")
+        for camera_name, thread in self.camera_threads.items():
+            if thread.is_alive():
+                print(f"Waiting for {camera_name} thread to finish...")
+                thread.join(timeout=5.0)
+                if thread.is_alive():
+                    print(f"Warning: {camera_name} thread did not finish gracefully")
+        
+        print("Creating videos from sampled frames...")
+        self.create_videos()
     
     def create_videos_from_samples(self):
         """Create videos from the sampled frames"""
