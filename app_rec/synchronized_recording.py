@@ -86,6 +86,9 @@ class SynchronizedRecorder:
         # Check for ffmpeg
         self.check_ffmpeg()
         
+        # Clean up any existing camera processes
+        self.cleanup_existing_cameras()
+        
         # Don't check cameras here - they might be in use
         print("Camera availability will be checked when recording starts")
     
@@ -96,6 +99,33 @@ class SynchronizedRecorder:
             print("✅ ffmpeg is available")
         except (subprocess.CalledProcessError, FileNotFoundError):
             print("❌ ffmpeg not found. Please install ffmpeg")
+    
+    def cleanup_existing_cameras(self):
+        """Kill any existing camera processes that might be using the cameras"""
+        print("Cleaning up any existing camera processes...")
+        
+        try:
+            # Kill any rpicam-vid processes
+            result = subprocess.run("pkill -f rpicam-vid", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✅ Killed existing rpicam-vid processes")
+            else:
+                print("ℹ️  No existing rpicam-vid processes found")
+            
+            # Wait a moment for processes to be killed
+            time.sleep(2.0)
+            
+            # Also try to kill any libcamera processes
+            result = subprocess.run("pkill -f libcamera", shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("✅ Killed existing libcamera processes")
+            
+            time.sleep(1.0)
+            
+        except Exception as e:
+            print(f"Warning: Could not cleanup processes: {e}")
+        
+        print("Camera cleanup complete")
     
     def check_available_cameras(self):
         """Check what cameras are available on the system"""
@@ -178,6 +208,14 @@ class SynchronizedRecorder:
     def csi_camera1_thread(self):
         """Thread for CSI Camera 1 (camera 0) frame sampling"""
         print("CSI Camera 1 thread starting...")
+        
+        # Kill any existing rpicam-vid processes for camera 0
+        try:
+            subprocess.run("pkill -f 'rpicam-vid.*camera 0'", shell=True, capture_output=True)
+            time.sleep(1.0)  # Wait for process to be killed
+            print("Killed any existing camera 0 processes")
+        except Exception as e:
+            print(f"Warning: Could not kill existing processes: {e}")
         
         # Use rpicam-vid to record MJPEG and extract frames
         timestamp = self.get_timestamp()
@@ -272,6 +310,14 @@ class SynchronizedRecorder:
     def csi_camera2_thread(self):
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
+        
+        # Kill any existing rpicam-vid processes for camera 1
+        try:
+            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
+            time.sleep(1.0)  # Wait for process to be killed
+            print("Killed any existing camera 1 processes")
+        except Exception as e:
+            print(f"Warning: Could not kill existing processes: {e}")
         
         # Use rpicam-vid to record MJPEG and extract frames
         timestamp = self.get_timestamp()
