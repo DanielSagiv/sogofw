@@ -274,27 +274,35 @@ class SynchronizedRecorder:
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed
                 if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
-                    # Read the latest frame from the MJPEG file
-                    cap = cv2.VideoCapture(str(mjpeg_filepath))
-                    if cap.isOpened():
-                        ret, frame = cap.read()
-                        if ret:
-                            # Add timestamp and frame number
-                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                            
-                            with self.frame_locks["CSI Cam 0"]:
-                                self.camera_frames["CSI Cam 0"].append({
-                                    'frame': frame.copy(),
-                                    'frame_number': frame_count,
-                                    'timestamp': current_time,
-                                    'timestamp_str': timestamp_str
-                                })
-                                print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
-                            last_sample_time = current_time
-                            frame_count += 1
-                        cap.release()
+                    # Check if MJPEG file exists and has content
+                    if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
+                        # Read the latest frame from the MJPEG file
+                        cap = cv2.VideoCapture(str(mjpeg_filepath))
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                # Add timestamp and frame number
+                                timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                
+                                with self.frame_locks["CSI Cam 0"]:
+                                    self.camera_frames["CSI Cam 0"].append({
+                                        'frame': frame.copy(),
+                                        'frame_number': frame_count,
+                                        'timestamp': current_time,
+                                        'timestamp_str': timestamp_str
+                                    })
+                                    print(f"[SAMPLING] CSI Cam 0: {len(self.camera_frames['CSI Cam 0'])} frames at {timestamp_str}")
+                                last_sample_time = current_time
+                                frame_count += 1
+                            else:
+                                print(f"❌ Failed to read frame from CSI Cam 0 MJPEG file")
+                            cap.release()
+                        else:
+                            print(f"❌ Failed to open CSI Cam 0 MJPEG file for reading")
+                    else:
+                        print(f"❌ CSI Cam 0 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -376,27 +384,35 @@ class SynchronizedRecorder:
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed
                 if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
-                    # Read the latest frame from the MJPEG file
-                    cap = cv2.VideoCapture(str(mjpeg_filepath))
-                    if cap.isOpened():
-                        ret, frame = cap.read()
-                        if ret:
-                            # Add timestamp and frame number
-                            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                            cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                            
-                            with self.frame_locks["CSI Cam 1"]:
-                                self.camera_frames["CSI Cam 1"].append({
-                                    'frame': frame.copy(),
-                                    'frame_number': frame_count,
-                                    'timestamp': current_time,
-                                    'timestamp_str': timestamp_str
-                                })
-                                print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
-                            last_sample_time = current_time
-                            frame_count += 1
-                        cap.release()
+                    # Check if MJPEG file exists and has content
+                    if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
+                        # Read the latest frame from the MJPEG file
+                        cap = cv2.VideoCapture(str(mjpeg_filepath))
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                # Add timestamp and frame number
+                                timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                                cv2.putText(frame, f"Frame: {frame_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                
+                                with self.frame_locks["CSI Cam 1"]:
+                                    self.camera_frames["CSI Cam 1"].append({
+                                        'frame': frame.copy(),
+                                        'frame_number': frame_count,
+                                        'timestamp': current_time,
+                                        'timestamp_str': timestamp_str
+                                    })
+                                    print(f"[SAMPLING] CSI Cam 1: {len(self.camera_frames['CSI Cam 1'])} frames at {timestamp_str}")
+                                last_sample_time = current_time
+                                frame_count += 1
+                            else:
+                                print(f"❌ Failed to read frame from CSI Cam 1 MJPEG file")
+                            cap.release()
+                        else:
+                            print(f"❌ Failed to open CSI Cam 1 MJPEG file for reading")
+                    else:
+                        print(f"❌ CSI Cam 1 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
                 
                 time.sleep(0.1)  # Check every 100ms
             
