@@ -86,8 +86,8 @@ class SynchronizedRecorder:
         # Check for ffmpeg
         self.check_ffmpeg()
         
-        # Check available cameras
-        self.check_available_cameras()
+        # Don't check cameras here - they might be in use
+        print("Camera availability will be checked when recording starts")
     
     def check_ffmpeg(self):
         """Check if ffmpeg is available"""
@@ -152,20 +152,27 @@ class SynchronizedRecorder:
         """Start all camera threads for frame sampling"""
         print("Starting camera threads for frame sampling...")
         
-        # Start CSI camera threads
+        # Start CSI camera threads with delays to avoid conflicts
         self.camera1_thread = threading.Thread(target=self.csi_camera1_thread, daemon=True)
         self.camera2_thread = threading.Thread(target=self.csi_camera2_thread, daemon=True)
         
         # Start DepthAI thread
         self.depthai_thread = threading.Thread(target=self.depthai_camera_thread, daemon=True)
         
-        # Start all threads
+        # Start threads with delays to avoid camera conflicts
+        print("Starting CSI Camera 1...")
         self.camera1_thread.start()
+        time.sleep(2.0)  # Wait 2 seconds between camera starts
+        
+        print("Starting CSI Camera 2...")
         self.camera2_thread.start()
+        time.sleep(2.0)  # Wait 2 seconds between camera starts
+        
+        print("Starting DepthAI Camera...")
         self.depthai_thread.start()
         
         # Wait for threads to initialize
-        time.sleep(1.0)
+        time.sleep(2.0)
         print("All camera threads started and ready for sampling")
     
     def csi_camera1_thread(self):
@@ -197,7 +204,25 @@ class SynchronizedRecorder:
             if process.poll() is not None:
                 stdout, stderr = process.communicate()
                 print(f"❌ CSI Camera 1 failed to start. stderr: {stderr.decode()}")
-                return
+                print("Trying alternative approach...")
+                
+                # Try with different parameters
+                alt_cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline --timeout 0 -o {mjpeg_filepath}"
+                print(f"Retrying with: {alt_cmd}")
+                
+                process = subprocess.Popen(
+                    alt_cmd, 
+                    shell=True, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE
+                )
+                
+                time.sleep(2.0)
+                
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    print(f"❌ CSI Camera 1 failed with alternative approach. stderr: {stderr.decode()}")
+                    return
             
             print("✅ CSI Camera 1 recording started successfully")
             
@@ -273,7 +298,25 @@ class SynchronizedRecorder:
             if process.poll() is not None:
                 stdout, stderr = process.communicate()
                 print(f"❌ CSI Camera 2 failed to start. stderr: {stderr.decode()}")
-                return
+                print("Trying alternative approach...")
+                
+                # Try with different parameters
+                alt_cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline --timeout 0 -o {mjpeg_filepath}"
+                print(f"Retrying with: {alt_cmd}")
+                
+                process = subprocess.Popen(
+                    alt_cmd, 
+                    shell=True, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE
+                )
+                
+                time.sleep(2.0)
+                
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    print(f"❌ CSI Camera 2 failed with alternative approach. stderr: {stderr.decode()}")
+                    return
             
             print("✅ CSI Camera 2 recording started successfully")
             
