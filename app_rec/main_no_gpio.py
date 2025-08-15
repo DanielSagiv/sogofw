@@ -383,16 +383,14 @@ class MultiCameraRecorder:
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
         
-        # Start all cameras with proper initialization
-        print("Starting all cameras with proper initialization...")
+        # Start all cameras simultaneously
+        print("Starting all cameras simultaneously...")
         
         # Start camera 1 (RPi camera 1)
         self.start_camera1_recording(timestamp)
-        time.sleep(0.1)  # Give camera 1 time to initialize
         
         # Start camera 2 (RPi camera 2) 
         self.start_camera2_recording(timestamp)
-        time.sleep(0.1)  # Give camera 2 time to initialize
         
         # Start camera 3 (DepthAI) and IMU - start immediately
         self.start_depthai_recording_sync(timestamp)
@@ -466,8 +464,8 @@ class MultiCameraRecorder:
         except Exception as e:
             print(f"Camera 0 test error: {e}")
         
-        # Use MJPEG format for recording (camera 0 is the first camera) - run until stopped
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -t 0 -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 0 is the first camera)
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
@@ -499,21 +497,7 @@ class MultiCameraRecorder:
                 time.sleep(1.0)  # Wait longer to see if file is created
                 
                 if self.camera1_process.poll() is None:
-                    print("Camera 1 is still running")
-                    
-                    # Check if file exists and has content
-                    if mjpeg_filepath.exists():
-                        file_size = mjpeg_filepath.stat().st_size
-                        print(f"Camera 1 file exists with size: {file_size} bytes")
-                        
-                        # Monitor file growth
-                        initial_size = file_size
-                        time.sleep(2.0)  # Wait 2 more seconds
-                        if mjpeg_filepath.exists():
-                            new_size = mjpeg_filepath.stat().st_size
-                            print(f"Camera 1 file size after 2s: {new_size} bytes (growth: {new_size - initial_size})")
-                    else:
-                        print(f"Camera 1 file does not exist: {mjpeg_filepath}")
+                    print("Camera 1 is running properly")
                 else:
                     stdout, stderr = self.camera1_process.communicate()
                     print(f"Camera 1 stopped unexpectedly. stdout: {stdout.decode()}")
@@ -535,8 +519,8 @@ class MultiCameraRecorder:
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Use MJPEG format for recording (camera 1 is the second camera) - run until stopped
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -t 0 -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 1 is the second camera)
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
@@ -557,14 +541,7 @@ class MultiCameraRecorder:
             # Check if process started successfully
             if self.camera2_process.poll() is None:
                 print(f"Camera 2 recording started successfully: {mjpeg_filename}")
-                # Wait a moment and check again
-                time.sleep(0.2)
-                if self.camera2_process.poll() is None:
-                    print("Camera 2 is running properly")
-                else:
-                    stdout, stderr = self.camera2_process.communicate()
-                    print(f"Camera 2 stopped unexpectedly. stdout: {stdout.decode()}")
-                    print(f"Camera 2 stopped unexpectedly. stderr: {stderr.decode()}")
+                print("Camera 2 is running properly")
             else:
                 stdout, stderr = self.camera2_process.communicate()
                 print(f"Camera 2 failed to start. stdout: {stdout.decode()}")
