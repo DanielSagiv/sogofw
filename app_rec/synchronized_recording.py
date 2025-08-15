@@ -312,6 +312,11 @@ class SynchronizedRecorder:
                 if should_sample:
                     print(f"📸 cam1: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     
+                    # Check if we should stop before processing
+                    if self.stop_event.is_set():
+                        print("🛑 cam1: Stop event detected, exiting frame capture")
+                        break
+                    
                     # Check if MJPEG file exists and has content
                     if mjpeg_filepath.exists():
                         file_size = mjpeg_filepath.stat().st_size
@@ -326,7 +331,7 @@ class SynchronizedRecorder:
                                 
                                 # Use ffmpeg to extract the last frame
                                 ffmpeg_cmd = f"ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=5)
+                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)  # Shorter timeout
                                 
                                 if result.returncode == 0 and frame_filepath.exists():
                                     # Read the extracted frame
@@ -446,6 +451,11 @@ class SynchronizedRecorder:
                 if should_sample:
                     print(f"📸 cam2: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     
+                    # Check if we should stop before processing
+                    if self.stop_event.is_set():
+                        print("🛑 cam2: Stop event detected, exiting frame capture")
+                        break
+                    
                     # Check if MJPEG file exists and has content
                     if mjpeg_filepath.exists():
                         file_size = mjpeg_filepath.stat().st_size
@@ -460,7 +470,7 @@ class SynchronizedRecorder:
                                 
                                 # Use ffmpeg to extract the last frame
                                 ffmpeg_cmd = f"ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=5)
+                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)  # Shorter timeout
                                 
                                 if result.returncode == 0 and frame_filepath.exists():
                                     # Read the extracted frame
@@ -561,6 +571,11 @@ class SynchronizedRecorder:
                 if should_sample:
                     print(f"📸 cam3: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     
+                    # Check if we should stop before processing
+                    if self.stop_event.is_set():
+                        print("🛑 cam3: Stop event detected, exiting frame capture")
+                        break
+                    
                     # Get frame from DepthAI
                     inRgb = qRgb.tryGet()
                     if inRgb is not None:
@@ -631,14 +646,30 @@ class SynchronizedRecorder:
         if hasattr(self, 'sampling_timer'):
             print("⏰ Stopping sampling timer...")
         
-        # Wait for all camera threads to finish
+        # Force kill any hanging ffmpeg processes
+        print("🔪 Force killing any hanging ffmpeg processes...")
+        try:
+            subprocess.run("pkill -f ffmpeg", shell=True, capture_output=True)
+            time.sleep(1.0)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not kill ffmpeg processes: {e}")
+        
+        # Force kill any rpicam-vid processes
+        print("🔪 Force killing any rpicam-vid processes...")
+        try:
+            subprocess.run("pkill -f rpicam-vid", shell=True, capture_output=True)
+            time.sleep(1.0)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not kill rpicam-vid processes: {e}")
+        
+        # Wait for all camera threads to finish with shorter timeout
         print("⏳ Waiting for camera threads to finish...")
         for camera_name, thread in self.camera_threads.items():
             if thread.is_alive():
                 print(f"⏳ Waiting for {camera_name} thread to finish...")
-                thread.join(timeout=5.0)
+                thread.join(timeout=2.0)  # Shorter timeout
                 if thread.is_alive():
-                    print(f"⚠️ Warning: {camera_name} thread did not finish gracefully")
+                    print(f"⚠️ Warning: {camera_name} thread did not finish gracefully - forcing stop")
                 else:
                     print(f"✅ {camera_name} thread finished successfully")
         
