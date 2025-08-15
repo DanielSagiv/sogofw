@@ -1,144 +1,138 @@
 #!/usr/bin/env python3
-import os
-import sys
 import cv2
-import time
-import signal
 import depthai as dai
-import threading
 import subprocess
+import threading
+import time
+import os
+import signal
 from datetime import datetime
 from collections import deque
 
 # Config
-WIDTH, HEIGHT, FPS = 640, 480, 2  # FPS = 2 since we're sampling every 0.5s
-INTERVAL_SEC = 0.5
+WIDTH, HEIGHT, FPS = 640, 480, 30
+SAMPLE_INTERVAL = 0.5
 SESSION_ROOT = "recordings"
 
-# Shared buffers
+# Buffers for each camera
 buffers = {
-    "CSI0": deque(),
-    "CSI1": deque(),
-    "OAK": deque()
+    "cam0": deque(),
+    "cam1": deque(),
+    "cam3": deque(),
 }
 
-stop_sampling = threading.Event()
+# Sync
 start_sampling = threading.Event()
-
+stop_sampling = threading.Event()
 
 def make_session_folder():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = os.path.join(SESSION_ROOT, f"session_{ts}")
-    os.makedirs(path, exist_ok=True)
-    return path
+    folder = os.path.join(SESSION_ROOT, f"session_{ts}")
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
-
-def start_csi_stream(index, name, buffer_key):
+def capture_csi(index, label):
     cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     cap.set(cv2.CAP_PROP_FPS, FPS)
 
-    def run():
-        while not stop_sampling.is_set():
-            ret, frame = cap.read()
-            if ret:
-                cv2.imshow(name, frame)
-                if start_sampling.is_set():
-                    buffers[buffer_key].append(frame.copy())
+    if not cap.isOpened():
+        print(f"[ERROR] Failed to open CSI camera {index} ({label})")
+        return
+
+    while not stop_sampling.is_set():
+        ret, frame = cap.read()
+        if not ret:
+            time.sleep(0.1)
+            continue
+
+        cv2.imshow(label, frame)
+        key = cv2.waitKey(1)
+        if key == 27:
+            break
+
+        if start_sampling.is_set():
+            buffers[label].append(frame.copy())
+
+        time.sleep(SAMPLE_INTERVAL)
+
+    cap.release()
+    cv2.destroyWindow(label)
+
+def capture_oak(label="cam3"):
+    pipeline = dai.Pipeline()
+    cam = pipeline.create(dai.node.ColorCamera)
+    cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+    cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+    cam.setVideoSize(WIDTH, HEIGHT)
+    cam.setFps(FPS)
+
+    xout = pipeline.create(dai.node.XLinkOut)
+    xout.setStreamName("video")
+    cam.video.link(xout.input)
+
+    device = dai.Device(pipeline)
+    q = device.getOutputQueue("video", maxSize=4, blocking=False)
+
+    while not stop_sampling.is_set():
+        frame_packet = q.tryGet()
+        if frame_packet:
+            frame = frame_packet.getCvFrame()
+            cv2.imshow("DepthAI Cam", frame)
             key = cv2.waitKey(1)
             if key == 27:
                 break
-        cap.release()
-        cv2.destroyWindow(name)
+            if start_sampling.is_set():
+                buffers[label].append(frame.copy())
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    return thread
+        time.sleep(SAMPLE_INTERVAL)
 
+    cv2.destroyWindow("DepthAI Cam")
 
-def start_depthai_stream(buffer_key):
-    def run():
-        pipeline = dai.Pipeline()
-        cam = pipeline.create(dai.node.ColorCamera)
-        cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        cam.setVideoSize(WIDTH, HEIGHT)
-        cam.setFps(30)
-
-        xout = pipeline.create(dai.node.XLinkOut)
-        xout.setStreamName("video")
-        cam.video.link(xout.input)
-
-        device = dai.Device(pipeline)
-        q = device.getOutputQueue("video", maxSize=4, blocking=False)
-
-        while not stop_sampling.is_set():
-            pkt = q.tryGet()
-            if pkt is not None:
-                frame = pkt.getCvFrame()
-                cv2.imshow("DepthAI Cam", frame)
-                if start_sampling.is_set():
-                    buffers[buffer_key].append(frame.copy())
-            if cv2.waitKey(1) == 27:
-                break
-        cv2.destroyWindow("DepthAI Cam")
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    return thread
-
-
-def logger_thread():
-    print("[INFO] Sampling started. Press ENTER again to stop and save videos.")
-    while not stop_sampling.is_set():
-        ts = datetime.now().isoformat()
-        print(f"[{ts}] Sampled.")
-        time.sleep(INTERVAL_SEC)
-
-
-def write_video(frames, path):
+def write_video(frames, out_path):
     if not frames:
-        print(f"[WARN] No frames to write for {path}")
+        print(f"[WARN] No frames to write to {out_path}")
         return
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(path, fourcc, FPS, (WIDTH, HEIGHT))
-    for frame in frames:
-        out.write(frame)
-    out.release()
-    print(f"[OK] Saved {path}")
-
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, 1.0 / SAMPLE_INTERVAL, (WIDTH, HEIGHT))
+    for f in frames:
+        writer.write(f)
+    writer.release()
+    print(f"[OK] Saved {out_path}")
 
 def main():
-    print("[INFO] Starting live previews...")
     session = make_session_folder()
+    print("[INFO] Initializing all cameras...")
 
-    csi0 = start_csi_stream(0, "CSI Cam 0", "CSI0")
-    csi1 = start_csi_stream(1, "CSI Cam 1", "CSI1")
-    oak = start_depthai_stream("OAK")
+    # Start camera threads
+    t0 = threading.Thread(target=capture_csi, args=(0, "cam0"), daemon=True)
+    t1 = threading.Thread(target=capture_csi, args=(1, "cam1"), daemon=True)
+    t3 = threading.Thread(target=capture_oak, args=("cam3",), daemon=True)
 
-    input("[READY] All cameras live. Press ENTER to start sampling...")
+    t0.start()
+    t1.start()
+    t3.start()
 
+    input("[READY] All cameras live. Press ENTER to start sampling every 0.5s...")
     start_sampling.set()
-    log_thread = threading.Thread(target=logger_thread, daemon=True)
-    log_thread.start()
 
-    input()
+    input("[REC] Sampling... Press ENTER again to stop and save.")
     stop_sampling.set()
 
-    print("[STOP] Stopping and saving videos...")
-    log_thread.join(timeout=2)
-    csi0.join(timeout=2)
-    csi1.join(timeout=2)
-    oak.join(timeout=2)
+    print("[INFO] Stopping...")
 
-    # Write videos
-    write_video(buffers["CSI0"], os.path.join(session, "cam1.mp4"))
-    write_video(buffers["CSI1"], os.path.join(session, "cam2.mp4"))
-    write_video(buffers["OAK"], os.path.join(session, "cam3.mp4"))
+    t0.join()
+    t1.join()
+    t3.join()
 
-    print(f"[DONE] All saved in: {session}")
+    print("[INFO] Saving all videos...")
 
+    write_video(buffers["cam0"], os.path.join(session, "cam1.mp4"))
+    write_video(buffers["cam1"], os.path.join(session, "cam2.mp4"))
+    write_video(buffers["cam3"], os.path.join(session, "cam3.mp4"))
+
+    print(f"[DONE] All videos saved in: {session}")
 
 if __name__ == "__main__":
     main()
