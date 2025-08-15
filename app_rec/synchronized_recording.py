@@ -47,12 +47,28 @@ class SynchronizedRecorder:
         self.recordings_dir = Path("recordings")
         self.recordings_dir.mkdir(exist_ok=True)
         
-        # Frame buffers for each camera
+        # Initialize frame buffers and locks for each camera
         self.camera_frames = {
-            "cam1": deque(),
-            "cam2": deque(), 
-            "cam3": deque()
+            "cam1": deque(maxlen=1000),
+            "cam2": deque(maxlen=1000),
+            "cam3": deque(maxlen=1000)
         }
+        
+        # Initialize thread locks for each camera
+        self.frame_locks = {
+            "cam1": threading.Lock(),
+            "cam2": threading.Lock(),
+            "cam3": threading.Lock()
+        }
+        
+        # Initialize camera threads dictionary
+        self.camera_threads = {}
+        
+        # Initialize sampling control
+        self.sampling_active = False
+        self.stop_event = threading.Event()
+        self.sample_event = threading.Event()
+        self.sampling_lock = threading.Lock()
         
         # Camera processes and threads
         self.camera1_process = None
@@ -61,17 +77,17 @@ class SynchronizedRecorder:
         self.depthai_thread = None
         
         # Thread locks for thread safety
-        self.frame_locks = {
-            "cam1": threading.Lock(),
-            "cam2": threading.Lock(),
-            "cam3": threading.Lock()
-        }
+        # self.frame_locks = {
+        #     "cam1": threading.Lock(),
+        #     "cam2": threading.Lock(),
+        #     "cam3": threading.Lock()
+        # }
         
         # Shared sampling control - simple approach
         self.sample_interval = 0.5
         self.next_sample_time = 0
-        self.sampling_lock = threading.Lock()
-        self.sample_event = threading.Event()  # Event to signal all cameras to sample
+        # self.sampling_lock = threading.Lock()
+        # self.sample_event = threading.Event()  # Event to signal all cameras to sample
         
         # Initialize LCD
         if LCD_AVAILABLE:
