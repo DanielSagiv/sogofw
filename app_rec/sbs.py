@@ -28,17 +28,77 @@ cameras_ready = False
 RECORDINGS_DIR = "recordings"
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
+def check_available_video_devices():
+    """Check what video devices are available on the system"""
+    print("[INFO] Checking available video devices...")
+    available_devices = []
+    
+    for i in range(10):  # Check first 10 video devices
+        device_path = f"/dev/video{i}"
+        if os.path.exists(device_path):
+            try:
+                cap = cv2.VideoCapture(device_path)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    if ret:
+                        print(f"[FOUND] {device_path} - Working camera")
+                        available_devices.append(device_path)
+                    else:
+                        print(f"[FOUND] {device_path} - Device exists but no frame")
+                else:
+                    print(f"[FOUND] {device_path} - Device exists but not accessible")
+                cap.release()
+            except Exception as e:
+                print(f"[ERROR] {device_path} - Error: {e}")
+        else:
+            print(f"[NOT_FOUND] {device_path}")
+    
+    print(f"[SUMMARY] Found {len(available_devices)} working video devices: {available_devices}")
+    return available_devices
+
 def start_csi_camera_preview(index, name):
     """Start CSI camera preview and frame capture using OpenCV"""
     def run():
+        # Use proper device paths for Raspberry Pi CSI cameras
+        if index == 0:
+            device_path = "/dev/video0"
+        elif index == 1:
+            device_path = "/dev/video1"
+        else:
+            device_path = f"/dev/video{index}"
+        
+        print(f"[INFO] Attempting to open {name} at {device_path}")
+        
         # Use OpenCV to capture from CSI camera
-        cap = cv2.VideoCapture(index)
+        cap = cv2.VideoCapture(device_path)
+        
+        if not cap.isOpened():
+            print(f"[ERROR] Failed to open {name} at {device_path}")
+            # Try alternative device paths
+            alt_paths = [f"/dev/video{index}", f"/dev/video{index+2}", f"/dev/video{index+4}"]
+            for alt_path in alt_paths:
+                if alt_path != device_path:
+                    print(f"[INFO] Trying alternative path: {alt_path}")
+                    cap = cv2.VideoCapture(alt_path)
+                    if cap.isOpened():
+                        print(f"[SUCCESS] Opened {name} at {alt_path}")
+                        break
+            
+            if not cap.isOpened():
+                print(f"[ERROR] Could not open {name} with any device path")
+                return
+        
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
         cap.set(cv2.CAP_PROP_FPS, FPS)
         
+        # Set buffer size to reduce latency
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
         global cameras_ready
         cameras_ready = True
+        
+        print(f"[SUCCESS] {name} is now capturing frames")
         
         while True:
             ret, frame = cap.read()
@@ -146,6 +206,9 @@ def create_videos_from_samples():
 
 def main():
     print("[INFO] Launching all 3 camera previews...")
+    
+    # Check available video devices first
+    available_devices = check_available_video_devices()
 
     # Start CSI camera previews using OpenCV
     csi_thread_0 = start_csi_camera_preview(0, "CSI Cam 0")
