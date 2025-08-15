@@ -319,22 +319,23 @@ class SynchronizedRecorder:
                         print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Use ffmpeg with timeout to extract the latest frame
+                            # Use direct VideoCapture to get the latest frame
                             try:
-                                # Create temporary frame file
-                                frame_filename = f"temp_frame1_{int(time.time() * 1000)}.jpg"
-                                frame_filepath = self.recordings_dir / frame_filename
+                                # Open the camera directly
+                                cap = cv2.VideoCapture(0)
                                 
-                                # Use ffmpeg to extract the last frame with timeout
-                                ffmpeg_cmd = f"timeout 1 ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)
-                                
-                                if result.returncode == 0 and frame_filepath.exists():
-                                    # Read the extracted frame
-                                    frame = cv2.imread(str(frame_filepath))
+                                if cap.isOpened():
+                                    # Set camera properties for better performance
+                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                                    cap.set(cv2.CAP_PROP_FPS, 30)
                                     
-                                    if frame is not None:
-                                        print(f"✅ cam1: Frame extracted successfully, shape: {frame.shape}")
+                                    # Read the latest frame
+                                    ret, frame = cap.read()
+                                    cap.release()
+                                    
+                                    if ret and frame is not None:
+                                        print(f"✅ cam1: Frame captured directly, shape: {frame.shape}")
                                         
                                         # Add frame number and timestamp overlay
                                         frame_number = len(self.camera_frames["cam1"]) + 1
@@ -351,46 +352,11 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam1: Failed to read extracted frame")
-                                    
-                                    # Clean up temporary file
-                                    if frame_filepath.exists():
-                                        frame_filepath.unlink()
+                                        print(f"❌ cam1: Failed to read frame from camera")
                                 else:
-                                    print(f"❌ cam1: Failed to extract frame with ffmpeg (return code: {result.returncode})")
-                            except subprocess.TimeoutExpired:
-                                print(f"❌ cam1: ffmpeg timeout - trying alternative method")
-                                # Fallback: try to read the file directly
-                                try:
-                                    cap = cv2.VideoCapture(str(mjpeg_filepath))
-                                    if cap.isOpened():
-                                        ret, frame = cap.read()
-                                        cap.release()
-                                        if ret and frame is not None:
-                                            print(f"✅ cam1: Frame extracted with fallback method, shape: {frame.shape}")
-                                            
-                                            # Add frame number and timestamp overlay
-                                            frame_number = len(self.camera_frames["cam1"]) + 1
-                                            timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                            
-                                            # Add overlays
-                                            cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                            cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                            
-                                            # Store frame with timestamp
-                                            with self.frame_locks["cam1"]:
-                                                self.camera_frames["cam1"].append((frame, current_time))
-                                            
-                                            print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                        else:
-                                            print(f"❌ cam1: Fallback method also failed")
-                                    else:
-                                        print(f"❌ cam1: Could not open MJPEG file with VideoCapture")
-                                except Exception as e:
-                                    print(f"❌ cam1: Fallback method error: {e}")
+                                    print(f"❌ cam1: Could not open camera 0")
                             except Exception as e:
-                                print(f"❌ cam1: Error extracting frame: {e}")
+                                print(f"❌ cam1: Error capturing frame: {e}")
                         else:
                             print(f"❌ cam1: MJPEG file is empty (size: {file_size})")
                     else:
@@ -489,22 +455,23 @@ class SynchronizedRecorder:
                         print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Use ffmpeg with timeout to extract the latest frame
+                            # Use direct VideoCapture to get the latest frame
                             try:
-                                # Create temporary frame file
-                                frame_filename = f"temp_frame2_{int(time.time() * 1000)}.jpg"
-                                frame_filepath = self.recordings_dir / frame_filename
+                                # Open the camera directly
+                                cap = cv2.VideoCapture(1)
                                 
-                                # Use ffmpeg to extract the last frame with timeout
-                                ffmpeg_cmd = f"timeout 1 ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)
-                                
-                                if result.returncode == 0 and frame_filepath.exists():
-                                    # Read the extracted frame
-                                    frame = cv2.imread(str(frame_filepath))
+                                if cap.isOpened():
+                                    # Set camera properties for better performance
+                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                                    cap.set(cv2.CAP_PROP_FPS, 30)
                                     
-                                    if frame is not None:
-                                        print(f"✅ cam2: Frame extracted successfully, shape: {frame.shape}")
+                                    # Read the latest frame
+                                    ret, frame = cap.read()
+                                    cap.release()
+                                    
+                                    if ret and frame is not None:
+                                        print(f"✅ cam2: Frame captured directly, shape: {frame.shape}")
                                         
                                         # Add frame number and timestamp overlay
                                         frame_number = len(self.camera_frames["cam2"]) + 1
@@ -521,46 +488,11 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam2: Failed to read extracted frame")
-                                    
-                                    # Clean up temporary file
-                                    if frame_filepath.exists():
-                                        frame_filepath.unlink()
+                                        print(f"❌ cam2: Failed to read frame from camera")
                                 else:
-                                    print(f"❌ cam2: Failed to extract frame with ffmpeg (return code: {result.returncode})")
-                            except subprocess.TimeoutExpired:
-                                print(f"❌ cam2: ffmpeg timeout - trying alternative method")
-                                # Fallback: try to read the file directly
-                                try:
-                                    cap = cv2.VideoCapture(str(mjpeg_filepath))
-                                    if cap.isOpened():
-                                        ret, frame = cap.read()
-                                        cap.release()
-                                        if ret and frame is not None:
-                                            print(f"✅ cam2: Frame extracted with fallback method, shape: {frame.shape}")
-                                            
-                                            # Add frame number and timestamp overlay
-                                            frame_number = len(self.camera_frames["cam2"]) + 1
-                                            timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                            
-                                            # Add overlays
-                                            cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                            cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                            cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                            
-                                            # Store frame with timestamp
-                                            with self.frame_locks["cam2"]:
-                                                self.camera_frames["cam2"].append((frame, current_time))
-                                            
-                                            print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                        else:
-                                            print(f"❌ cam2: Fallback method also failed")
-                                    else:
-                                        print(f"❌ cam2: Could not open MJPEG file with VideoCapture")
-                                except Exception as e:
-                                    print(f"❌ cam2: Fallback method error: {e}")
+                                    print(f"❌ cam2: Could not open camera 1")
                             except Exception as e:
-                                print(f"❌ cam2: Error extracting frame: {e}")
+                                print(f"❌ cam2: Error capturing frame: {e}")
                         else:
                             print(f"❌ cam2: MJPEG file is empty (size: {file_size})")
                     else:
