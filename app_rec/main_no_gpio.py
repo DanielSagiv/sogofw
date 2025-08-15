@@ -409,6 +409,9 @@ class MultiCameraRecorder:
         print("Stopping recording...")
         self.recording = False
         
+        # Set stop event for DepthAI thread
+        self.stop_recording_event.set()
+        
         # Update LCD to show ready status
         if LCD_AVAILABLE:
             try:
@@ -418,6 +421,9 @@ class MultiCameraRecorder:
                 print(f"LCD update failed: {e}")
         else:
             print("LCD not available - cannot update ready status")
+        
+        # Stop all cameras simultaneously
+        print("Stopping all cameras simultaneously...")
         
         # Stop camera processes
         self.stop_camera_processes()
@@ -460,8 +466,8 @@ class MultiCameraRecorder:
         except Exception as e:
             print(f"Camera 0 test error: {e}")
         
-        # Use MJPEG format for recording (camera 0 is the first camera)
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 0 is the first camera) - run until stopped
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -t 0 -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 1 with command: {cmd}")
@@ -529,8 +535,8 @@ class MultiCameraRecorder:
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         mp4_filepath = self.recordings_dir / mp4_filename
         
-        # Use MJPEG format for recording (camera 1 is the second camera)
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Use MJPEG format for recording (camera 1 is the second camera) - run until stopped
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -t 0 -o {mjpeg_filepath}"
         
         try:
             print(f"Starting Camera 2 with command: {cmd}")
