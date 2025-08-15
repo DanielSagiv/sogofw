@@ -18,6 +18,9 @@ import serial
 from pathlib import Path
 from collections import deque
 import numpy as np
+import queue
+import msvcrt # For Windows kbhit
+import select # For non-blocking input
 
 # LCD Display (optional)
 try:
@@ -39,11 +42,10 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 class SynchronizedRecorder:
     def __init__(self):
-        self.recording = False
-        self.sampling_active = False
-        self.stop_event = threading.Event()
+        """Initialize the synchronized recorder"""
+        print("Synchronized Multi-Camera Recording System Initialized")
         
-        # Recording paths
+        # Create recordings directory
         self.recordings_dir = Path("recordings")
         self.recordings_dir.mkdir(exist_ok=True)
         
@@ -74,7 +76,6 @@ class SynchronizedRecorder:
         self.camera1_process = None
         self.camera2_process = None
         self.depthai_device = None
-        self.depthai_thread = None
         
         # Thread locks for thread safety
         # self.frame_locks = {
@@ -92,21 +93,25 @@ class SynchronizedRecorder:
         # Initialize LCD
         if LCD_AVAILABLE:
             try:
-                set_rgb(0, 128, 64)  # Green color
-                set_text("SOGO READY")
-                print("LCD initialized successfully")
+                set_rgb(0, 128, 64)  # Green color for ready
+                set_text("READY")
+                print("LCD display enabled")
             except Exception as e:
                 print(f"LCD initialization failed: {e}")
         else:
-            print("LCD not available - using console output")
+            print("LCD display not available")
         
-        print("Synchronized Multi-Camera Recording System Initialized")
-        print("Press Enter to start frame sampling")
-        print("Press Enter again to stop sampling and create videos")
-        print("Press Ctrl+C to exit")
+        # Input handling
+        self.input_thread = None
+        self.input_queue = queue.Queue()
         
-        # Check for ffmpeg
-        self.check_ffmpeg()
+        # Check if ffmpeg is available
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+            print("✅ ffmpeg is available")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("❌ ffmpeg is not available. Please install ffmpeg.")
+            sys.exit(1)
         
         # Clean up any existing camera processes
         self.cleanup_existing_cameras()
@@ -323,19 +328,34 @@ class SynchronizedRecorder:
                         print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Use ffmpeg to extract the last frame
+                            # Try to read frame directly from MJPEG file without ffmpeg
                             try:
-                                # Create temporary frame file
-                                frame_filename = f"temp_frame1_{timestamp}.jpg"
-                                frame_filepath = self.recordings_dir / frame_filename
+                                # Read the MJPEG file as binary and extract a frame
+                                with open(mjpeg_filepath, 'rb') as f:
+                                    # Read the last 100KB of the file (should contain recent frames)
+                                    f.seek(max(0, file_size - 100*1024))
+                                    data = f.read()
                                 
-                                # Use ffmpeg to extract the last frame
-                                ffmpeg_cmd = f"ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)  # Shorter timeout
+                                # Try to find JPEG markers in the data
+                                jpeg_markers = []
+                                pos = 0
+                                while True:
+                                    pos = data.find(b'\xff\xd8', pos)  # JPEG start marker
+                                    if pos == -1:
+                                        break
+                                    end_pos = data.find(b'\xff\xd9', pos)  # JPEG end marker
+                                    if end_pos != -1:
+                                        jpeg_markers.append((pos, end_pos + 2))
+                                    pos += 2
                                 
-                                if result.returncode == 0 and frame_filepath.exists():
-                                    # Read the extracted frame
-                                    frame = cv2.imread(str(frame_filepath))
+                                if jpeg_markers:
+                                    # Take the last complete JPEG frame
+                                    start, end = jpeg_markers[-1]
+                                    jpeg_data = data[start:end]
+                                    
+                                    # Convert to numpy array
+                                    nparr = np.frombuffer(jpeg_data, np.uint8)
+                                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                                     
                                     if frame is not None:
                                         print(f"✅ cam1: Frame extracted successfully, shape: {frame.shape}")
@@ -355,13 +375,9 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam1: Failed to read extracted frame")
-                                    
-                                    # Clean up temporary file
-                                    if frame_filepath.exists():
-                                        frame_filepath.unlink()
+                                        print(f"❌ cam1: Failed to decode JPEG frame")
                                 else:
-                                    print(f"❌ cam1: Failed to extract frame with ffmpeg: {result.stderr}")
+                                    print(f"❌ cam1: No JPEG frames found in MJPEG file")
                             except Exception as e:
                                 print(f"❌ cam1: Error extracting frame: {e}")
                         else:
@@ -462,19 +478,34 @@ class SynchronizedRecorder:
                         print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
                         
                         if file_size > 0:
-                            # Use ffmpeg to extract the last frame
+                            # Try to read frame directly from MJPEG file without ffmpeg
                             try:
-                                # Create temporary frame file
-                                frame_filename = f"temp_frame2_{timestamp}.jpg"
-                                frame_filepath = self.recordings_dir / frame_filename
+                                # Read the MJPEG file as binary and extract a frame
+                                with open(mjpeg_filepath, 'rb') as f:
+                                    # Read the last 100KB of the file (should contain recent frames)
+                                    f.seek(max(0, file_size - 100*1024))
+                                    data = f.read()
                                 
-                                # Use ffmpeg to extract the last frame
-                                ffmpeg_cmd = f"ffmpeg -sseof -1 -i {mjpeg_filepath} -vframes 1 -y {frame_filepath}"
-                                result = subprocess.run(ffmpeg_cmd.split(), capture_output=True, text=True, timeout=2)  # Shorter timeout
+                                # Try to find JPEG markers in the data
+                                jpeg_markers = []
+                                pos = 0
+                                while True:
+                                    pos = data.find(b'\xff\xd8', pos)  # JPEG start marker
+                                    if pos == -1:
+                                        break
+                                    end_pos = data.find(b'\xff\xd9', pos)  # JPEG end marker
+                                    if end_pos != -1:
+                                        jpeg_markers.append((pos, end_pos + 2))
+                                    pos += 2
                                 
-                                if result.returncode == 0 and frame_filepath.exists():
-                                    # Read the extracted frame
-                                    frame = cv2.imread(str(frame_filepath))
+                                if jpeg_markers:
+                                    # Take the last complete JPEG frame
+                                    start, end = jpeg_markers[-1]
+                                    jpeg_data = data[start:end]
+                                    
+                                    # Convert to numpy array
+                                    nparr = np.frombuffer(jpeg_data, np.uint8)
+                                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                                     
                                     if frame is not None:
                                         print(f"✅ cam2: Frame extracted successfully, shape: {frame.shape}")
@@ -494,13 +525,9 @@ class SynchronizedRecorder:
                                         
                                         print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                     else:
-                                        print(f"❌ cam2: Failed to read extracted frame")
-                                    
-                                    # Clean up temporary file
-                                    if frame_filepath.exists():
-                                        frame_filepath.unlink()
+                                        print(f"❌ cam2: Failed to decode JPEG frame")
                                 else:
-                                    print(f"❌ cam2: Failed to extract frame with ffmpeg: {result.stderr}")
+                                    print(f"❌ cam2: No JPEG frames found in MJPEG file")
                             except Exception as e:
                                 print(f"❌ cam2: Error extracting frame: {e}")
                         else:
@@ -735,6 +762,34 @@ class SynchronizedRecorder:
             except Exception as e:
                 print(f"LCD update failed: {e}")
     
+    def start_input_thread(self):
+        """Start a thread to handle user input"""
+        def input_handler():
+            while not self.stop_event.is_set():
+                try:
+                    # Non-blocking input check
+                    if msvcrt.kbhit() if os.name == 'nt' else select.select([sys.stdin], [], [], 0.1)[0]:
+                        key = input().strip()
+                        if key == '' or key.lower() == 'q':
+                            self.input_queue.put('enter')
+                except (EOFError, KeyboardInterrupt):
+                    self.input_queue.put('quit')
+                    break
+                except Exception as e:
+                    print(f"Input error: {e}")
+                    break
+        
+        self.input_thread = threading.Thread(target=input_handler, daemon=True)
+        self.input_thread.start()
+        print("✅ Input thread started")
+    
+    def check_input(self):
+        """Check for user input without blocking"""
+        try:
+            return self.input_queue.get_nowait()
+        except queue.Empty:
+            return None
+    
     def cleanup(self):
         """Cleanup resources"""
         print("Cleaning up...")
@@ -748,6 +803,13 @@ class SynchronizedRecorder:
     def run(self):
         """Main run loop"""
         try:
+            print("Press Enter to start frame sampling")
+            print("Press Enter again to stop sampling and create videos")
+            print("Press Ctrl+C to exit")
+            
+            # Clean up any existing camera processes
+            self.cleanup_existing_cameras()
+            
             # Start camera threads
             self.start_camera_threads()
             
@@ -764,19 +826,21 @@ class SynchronizedRecorder:
                     response = input("Press Enter to start new recording, or 'q' to quit: ")
                     if response.lower() == 'q':
                         break
-                    
-                    # Clear frame buffers for next recording
-                    for camera_name in self.camera_frames:
-                        with self.frame_locks[camera_name]:
-                            self.camera_frames[camera_name].clear()
-                    
+                        
                 except KeyboardInterrupt:
+                    print("\n🛑 Interrupted by user")
                     break
                 except Exception as e:
-                    print(f"Error in main loop: {e}")
+                    print(f"❌ Error in main loop: {e}")
                     break
-        
-        finally:
+            
+            # Final cleanup
+            self.cleanup()
+            
+        except Exception as e:
+            print(f"❌ Fatal error: {e}")
+            import traceback
+            traceback.print_exc()
             self.cleanup()
 
 def main():
