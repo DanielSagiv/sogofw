@@ -257,41 +257,26 @@ class SynchronizedRecorder:
         except Exception as e:
             print(f"⚠️ Warning: Could not kill existing processes: {e}")
         
-        # Use rpicam-vid to record MJPEG and extract frames
-        timestamp = self.get_timestamp()
-        mjpeg_filename = f"camera1_{timestamp}.mjpeg"
-        mjpeg_filepath = self.recordings_dir / mjpeg_filename
-        
-        # Command to record MJPEG
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-        print(f"🎬 Starting CSI Camera 1 recording: {cmd}")
+        # Use direct camera access instead of MJPEG file reading
+        print("📷 Opening CSI Camera 1 directly...")
         
         try:
-            process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print("✅ CSI Camera 1 recording started successfully")
+            # Try to open camera 0 directly
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                print("❌ cam1: Failed to open camera 0 directly, trying /dev/video0")
+                cap = cv2.VideoCapture("/dev/video0")
             
-            # Wait for MJPEG file to be created
-            max_wait_time = 10.0
-            wait_start = time.time()
-            print(f"⏳ Waiting for cam1 MJPEG file to be created...")
+            if not cap.isOpened():
+                print("❌ cam1: Failed to open camera 0 with any method")
+                return
             
-            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
-                time.sleep(0.5)
-                elapsed = time.time() - wait_start
-                print(f"⏳ Still waiting for cam1 MJPEG file... ({elapsed:.1f}s)")
+            # Set camera properties
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 30)
             
-            if mjpeg_filepath.exists():
-                file_size = mjpeg_filepath.stat().st_size
-                print(f"✅ cam1: MJPEG file created successfully, size: {file_size} bytes")
-            else:
-                print(f"❌ cam1: MJPEG file not created after {max_wait_time}s")
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    print(f"❌ cam1: Process failed. stderr: {stderr.decode()}")
-                    return
-                else:
-                    print(f"⚠️ cam1: Process still running but no file created - continuing anyway")
-            
+            print("✅ cam1: Camera opened successfully")
             print("🔄 CSI Camera 1 monitoring loop started")
             
             # Main monitoring loop
@@ -312,67 +297,35 @@ class SynchronizedRecorder:
                 if should_sample:
                     print(f"📸 cam1: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     
-                    # Check if MJPEG file exists and has content
-                    if mjpeg_filepath.exists():
-                        file_size = mjpeg_filepath.stat().st_size
-                        print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
+                    # Read frame directly from camera
+                    ret, frame = cap.read()
+                    
+                    if ret and frame is not None:
+                        print(f"✅ cam1: Frame captured successfully, shape: {frame.shape}")
                         
-                        if file_size > 0:
-                            # Try to read frame from MJPEG file
-                            try:
-                                cap = cv2.VideoCapture(str(mjpeg_filepath))
-                                if cap.isOpened():
-                                    print("🎥 cam1: VideoCapture opened successfully")
-                                    
-                                    # Read multiple frames to get the latest one
-                                    last_frame = None
-                                    frame_count = 0
-                                    while True:
-                                        ret, frame = cap.read()
-                                        if not ret or frame is None:
-                                            break
-                                        last_frame = frame.copy()
-                                        frame_count += 1
-                                        if frame_count > 10:  # Limit to prevent infinite loop
-                                            break
-                                    
-                                    cap.release()
-                                    
-                                    if last_frame is not None:
-                                        print(f"✅ cam1: Frame read successfully, shape: {last_frame.shape} (read {frame_count} frames)")
-                                        
-                                        # Add frame number and timestamp overlay
-                                        frame_number = len(self.camera_frames["cam1"]) + 1
-                                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                        
-                                        # Add overlays
-                                        cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(last_frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        
-                                        # Store frame with timestamp
-                                        with self.frame_locks["cam1"]:
-                                            self.camera_frames["cam1"].append((last_frame, current_time))
-                                        
-                                        print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                    else:
-                                        print(f"❌ cam1: Failed to read any frames from MJPEG file")
-                                else:
-                                    print(f"❌ cam1: Failed to open MJPEG file with VideoCapture")
-                            except Exception as e:
-                                print(f"❌ cam1: Error reading frame: {e}")
-                        else:
-                            print(f"❌ cam1: MJPEG file is empty (size: {file_size})")
+                        # Add frame number and timestamp overlay
+                        frame_number = len(self.camera_frames["cam1"]) + 1
+                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        
+                        # Add overlays
+                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                        cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        
+                        # Store frame with timestamp
+                        with self.frame_locks["cam1"]:
+                            self.camera_frames["cam1"].append((frame, current_time))
+                        
+                        print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                     else:
-                        print(f"❌ cam1: MJPEG file does not exist")
+                        print(f"❌ cam1: Failed to read frame from camera")
                 
                 time.sleep(0.01)  # Small delay to prevent busy waiting
             
             # Cleanup
-            print("🛑 cam1: Stopping recording process...")
-            process.terminate()
-            process.wait(timeout=5)
-            print("✅ cam1: Recording process stopped")
+            print("🛑 cam1: Releasing camera...")
+            cap.release()
+            print("✅ cam1: Camera released")
             
         except Exception as e:
             print(f"❌ cam1: Error in camera thread: {e}")
@@ -393,41 +346,26 @@ class SynchronizedRecorder:
         except Exception as e:
             print(f"⚠️ Warning: Could not kill existing processes: {e}")
         
-        # Use rpicam-vid to record MJPEG and extract frames
-        timestamp = self.get_timestamp()
-        mjpeg_filename = f"camera2_{timestamp}.mjpeg"
-        mjpeg_filepath = self.recordings_dir / mjpeg_filename
-        
-        # Command to record MJPEG - use camera 1
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-        print(f"🎬 Starting CSI Camera 2 recording: {cmd}")
+        # Use direct camera access instead of MJPEG file reading
+        print("📷 Opening CSI Camera 2 directly...")
         
         try:
-            process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print("✅ CSI Camera 2 recording started successfully")
+            # Try to open camera 1 directly
+            cap = cv2.VideoCapture(1)
+            if not cap.isOpened():
+                print("❌ cam2: Failed to open camera 1 directly, trying /dev/video1")
+                cap = cv2.VideoCapture("/dev/video1")
             
-            # Wait for MJPEG file to be created
-            max_wait_time = 15.0  # Longer wait for camera 1
-            wait_start = time.time()
-            print(f"⏳ Waiting for cam2 MJPEG file to be created...")
+            if not cap.isOpened():
+                print("❌ cam2: Failed to open camera 1 with any method")
+                return
             
-            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
-                time.sleep(0.5)
-                elapsed = time.time() - wait_start
-                print(f"⏳ Still waiting for cam2 MJPEG file... ({elapsed:.1f}s)")
+            # Set camera properties
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 30)
             
-            if mjpeg_filepath.exists():
-                file_size = mjpeg_filepath.stat().st_size
-                print(f"✅ cam2: MJPEG file created successfully, size: {file_size} bytes")
-            else:
-                print(f"❌ cam2: MJPEG file not created after {max_wait_time}s")
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    print(f"❌ cam2: Process failed. stderr: {stderr.decode()}")
-                    return
-                else:
-                    print(f"⚠️ cam2: Process still running but no file created - continuing anyway")
-            
+            print("✅ cam2: Camera opened successfully")
             print("🔄 CSI Camera 2 monitoring loop started")
             
             # Main monitoring loop
@@ -448,67 +386,35 @@ class SynchronizedRecorder:
                 if should_sample:
                     print(f"📸 cam2: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     
-                    # Check if MJPEG file exists and has content
-                    if mjpeg_filepath.exists():
-                        file_size = mjpeg_filepath.stat().st_size
-                        print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
+                    # Read frame directly from camera
+                    ret, frame = cap.read()
+                    
+                    if ret and frame is not None:
+                        print(f"✅ cam2: Frame captured successfully, shape: {frame.shape}")
                         
-                        if file_size > 0:
-                            # Try to read frame from MJPEG file
-                            try:
-                                cap = cv2.VideoCapture(str(mjpeg_filepath))
-                                if cap.isOpened():
-                                    print("🎥 cam2: VideoCapture opened successfully")
-                                    
-                                    # Read multiple frames to get the latest one
-                                    last_frame = None
-                                    frame_count = 0
-                                    while True:
-                                        ret, frame = cap.read()
-                                        if not ret or frame is None:
-                                            break
-                                        last_frame = frame.copy()
-                                        frame_count += 1
-                                        if frame_count > 10:  # Limit to prevent infinite loop
-                                            break
-                                    
-                                    cap.release()
-                                    
-                                    if last_frame is not None:
-                                        print(f"✅ cam2: Frame read successfully, shape: {last_frame.shape} (read {frame_count} frames)")
-                                        
-                                        # Add frame number and timestamp overlay
-                                        frame_number = len(self.camera_frames["cam2"]) + 1
-                                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                        
-                                        # Add overlays
-                                        cv2.putText(last_frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(last_frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(last_frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        
-                                        # Store frame with timestamp
-                                        with self.frame_locks["cam2"]:
-                                            self.camera_frames["cam2"].append((last_frame, current_time))
-                                        
-                                        print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                    else:
-                                        print(f"❌ cam2: Failed to read any frames from MJPEG file")
-                                else:
-                                    print(f"❌ cam2: Failed to open MJPEG file with VideoCapture")
-                            except Exception as e:
-                                print(f"❌ cam2: Error reading frame: {e}")
-                        else:
-                            print(f"❌ cam2: MJPEG file is empty (size: {file_size})")
+                        # Add frame number and timestamp overlay
+                        frame_number = len(self.camera_frames["cam2"]) + 1
+                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        
+                        # Add overlays
+                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                        cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        
+                        # Store frame with timestamp
+                        with self.frame_locks["cam2"]:
+                            self.camera_frames["cam2"].append((frame, current_time))
+                        
+                        print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                     else:
-                        print(f"❌ cam2: MJPEG file does not exist")
+                        print(f"❌ cam2: Failed to read frame from camera")
                 
                 time.sleep(0.01)  # Small delay to prevent busy waiting
             
             # Cleanup
-            print("🛑 cam2: Stopping recording process...")
-            process.terminate()
-            process.wait(timeout=5)
-            print("✅ cam2: Recording process stopped")
+            print("🛑 cam2: Releasing camera...")
+            cap.release()
+            print("✅ cam2: Camera released")
             
         except Exception as e:
             print(f"❌ cam2: Error in camera thread: {e}")
