@@ -117,9 +117,9 @@ class MultiCameraRecorder:
         """Check what cameras are available on the system"""
         print("[INFO] Checking available cameras...")
         
-        # Check CSI cameras
+        # Check only the 2 CSI cameras we actually use
         csi_cameras = []
-        for i in range(4):  # Check first 4 video devices
+        for i in range(2):  # Only check camera 0 and 1
             device_path = f"/dev/video{i}"
             if os.path.exists(device_path):
                 try:
@@ -773,17 +773,32 @@ class MultiCameraRecorder:
             # Convert MJPEG to MP4
             if hasattr(self, 'camera1_mjpeg_file') and hasattr(self, 'camera1_mp4_file'):
                 if self.camera1_mjpeg_file.exists():
-                    try:
-                        cmd = f"ffmpeg -framerate 30 -i {self.camera1_mjpeg_file} -c:v libx264 {self.camera1_mp4_file}"
-                        print(f"Converting Camera 1 to MP4: {cmd}")
-                        subprocess.run(cmd, shell=True, check=True)
-                        print(f"Camera 1 MP4 created: {self.camera1_mp4_file}")
-                        
-                        # Remove MJPEG file after conversion
-                        self.camera1_mjpeg_file.unlink()
-                        print(f"Removed MJPEG file: {self.camera1_mjpeg_file}")
-                    except Exception as e:
-                        print(f"Error converting Camera 1 to MP4: {e}")
+                    # Check file size
+                    file_size = self.camera1_mjpeg_file.stat().st_size
+                    print(f"Camera 1 MJPEG file size: {file_size} bytes")
+                    
+                    if file_size > 0:
+                        try:
+                            cmd = f"ffmpeg -framerate 30 -i {self.camera1_mjpeg_file} -c:v libx264 {self.camera1_mp4_file}"
+                            print(f"Converting Camera 1 to MP4: {cmd}")
+                            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                            
+                            if result.returncode == 0:
+                                print(f"Camera 1 MP4 created: {self.camera1_mp4_file}")
+                                # Remove MJPEG file after conversion
+                                self.camera1_mjpeg_file.unlink()
+                                print(f"Removed MJPEG file: {self.camera1_mjpeg_file}")
+                            else:
+                                print(f"Camera 1 conversion failed. stdout: {result.stdout}")
+                                print(f"Camera 1 conversion failed. stderr: {result.stderr}")
+                        except Exception as e:
+                            print(f"Error converting Camera 1 to MP4: {e}")
+                    else:
+                        print(f"Camera 1 MJPEG file is empty ({file_size} bytes)")
+                else:
+                    print(f"Camera 1 MJPEG file does not exist: {self.camera1_mjpeg_file}")
+            else:
+                print("Camera 1 file attributes not found")
         
         if self.camera2_process:
             # Check if process is still running before stopping
