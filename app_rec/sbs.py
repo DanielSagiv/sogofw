@@ -1,114 +1,95 @@
 #!/usr/bin/env python3
 import cv2
 import depthai as dai
+import subprocess
 import threading
 import time
-import queue
+import os
 import signal
-import sys
 
+# Preview settings
 WIDTH, HEIGHT, FPS = 640, 480, 30
-SAMPLE_INTERVAL = 0.5  # seconds
+WINDOW_NAMES = ["CSI Cam 0", "CSI Cam 1", "DepthAI Cam"]
 
-# Buffers
-buffers = {
-    "cam1": [],
-    "cam2": [],
-    "cam3": [],
-}
-stop_flag = threading.Event()
+def start_rpicam_preview(index, name):
+    cmd = [
+        "rpicam-vid",
+        "--camera", str(index),
+        "--width", str(WIDTH),
+        "--height", str(HEIGHT),
+        "--framerate", str(FPS),
+        "--preview", "-",
+        "--nopreview", "0",
+        "--fullscreen", "0",
+        "--info-text", name,
+        "-t", "0",
+    ]
+    return subprocess.Popen(cmd, preexec_fn=os.setsid)
 
-def capture_frames_from_v4l(name, device_path):
-    cap = cv2.VideoCapture(device_path)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS, FPS)
-    if not cap.isOpened():
-        print(f"[ERROR] Cannot open {name} ({device_path})")
-        return
+def start_depthai_preview(name):
+    def run():
+        pipeline = dai.Pipeline()
+        cam = pipeline.create(dai.node.ColorCamera)
+        cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        cam.setVideoSize(WIDTH, HEIGHT)
+        cam.setFps(FPS)
 
-    print(f"[{name}] Opened {device_path}")
+        xout = pipeline.create(dai.node.XLinkOut)
+        xout.setStreamName("video")
+        cam.video.link(xout.input)
 
-    while not stop_flag.is_set():
-        ret, frame = cap.read()
-        if ret:
-            buffers[name].append(frame.copy())
+        device = dai.Device(pipeline)
+        q = device.getOutputQueue("video", maxSize=4, blocking=False)
+
+        while True:
+            frame = q.get().getCvFrame()
             cv2.imshow(name, frame)
-        if cv2.waitKey(1) == 27:
-            stop_flag.set()
-            break
-        time.sleep(SAMPLE_INTERVAL)
+            if cv2.waitKey(1) == 27:  # Esc to close
+                break
 
-    cap.release()
-    cv2.destroyWindow(name)
+        cv2.destroyWindow(name)
 
-def capture_frames_from_depthai(name):
-    pipeline = dai.Pipeline()
-    cam = pipeline.create(dai.node.ColorCamera)
-    cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-    cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-    cam.setVideoSize(WIDTH, HEIGHT)
-    cam.setFps(FPS)
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
 
-    xout = pipeline.create(dai.node.XLinkOut)
-    xout.setStreamName("video")
-    cam.video.link(xout.input)
-
-    device = dai.Device(pipeline)
-    q = device.getOutputQueue("video", maxSize=4, blocking=False)
-
-    print(f"[{name}] DepthAI stream started")
-
-    while not stop_flag.is_set():
-        frame = q.get().getCvFrame()
-        if frame is not None:
-            buffers[name].append(frame.copy())
-            cv2.imshow(name, frame)
-        if cv2.waitKey(1) == 27:
-            stop_flag.set()
-            break
-        time.sleep(SAMPLE_INTERVAL)
-
-    cv2.destroyWindow(name)
-
-def save_video(name, frames):
-    if not frames:
-        print(f"[{name}] No frames to save")
-        return
-    out = cv2.VideoWriter(f"{name}.mp4", cv2.VideoWriter_fourcc(*"mp4v"), int(1/SAMPLE_INTERVAL), (WIDTH, HEIGHT))
-    for f in frames:
-        out.write(f)
-    out.release()
-    print(f"[{name}] Saved {len(frames)} frames to {name}.mp4")
+def log_timestamps():
+    import datetime
+    start = datetime.datetime.now()
+    print(f"[START] {start.isoformat()}")
+    try:
+        while True:
+            now = datetime.datetime.now()
+            elapsed = (now - start).total_seconds()
+            print(f"[{now.isoformat()}] +{elapsed:.2f} sec")
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("[STOP] Logging interrupted.")
 
 def main():
-    print("[INFO] Starting camera previews...")
-    print("[INFO] Press ENTER once to start recording. Press ENTER again to stop.")
+    print("[INFO] Launching all 3 camera previews...")
 
-    # Wait for first ENTER to start
-    input("[READY] Press ENTER to begin sampling...")
+    # Start CSI previews via rpicam-vid
+    p0 = start_rpicam_preview(0, "CSI Cam 0")
+    p1 = start_rpicam_preview(1, "CSI Cam 1")
 
-    # Start capture threads
-    t1 = threading.Thread(target=capture_frames_from_v4l, args=("cam1", "/dev/video0"), daemon=True)
-    t2 = threading.Thread(target=capture_frames_from_v4l, args=("cam2", "/dev/video8"), daemon=True)
-    t3 = threading.Thread(target=capture_frames_from_depthai, args=("cam3",), daemon=True)
+    # Start DepthAI preview in a thread
+    oak_thread = start_depthai_preview("DepthAI Cam")
 
-    for t in (t1, t2, t3):
-        t.start()
+    input("[READY] All cameras live. Press ENTER to begin logging timestamps...")
 
-    input("[RECORDING] Press ENTER again to stop sampling...")
+    # Log timestamps every 0.5 sec
+    log_timestamps()
 
-    stop_flag.set()
+    # Cleanup CSI camera previews
+    for p in [p0, p1]:
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGINT)
+        except Exception:
+            pass
 
-    # Wait for threads to finish
-    for t in (t1, t2, t3):
-        t.join()
-
-    print("[INFO] Saving all videos...")
-    for name in buffers:
-        save_video(name, buffers[name])
-
-    print("[DONE] All videos saved. Exiting.")
+    print("[DONE] Exiting.")
 
 if __name__ == "__main__":
     main()
