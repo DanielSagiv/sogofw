@@ -435,6 +435,31 @@ class MultiCameraRecorder:
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         mp4_filepath = self.recordings_dir / mp4_filename
         
+        # Test if rpicam-vid is available
+        try:
+            test_result = subprocess.run(['rpicam-vid', '--help'], capture_output=True, text=True, timeout=5)
+            if test_result.returncode != 0:
+                print("Warning: rpicam-vid --help failed")
+        except Exception as e:
+            print(f"Warning: rpicam-vid not available: {e}")
+        
+        # Test if camera 0 is accessible
+        try:
+            test_cmd = "rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -t 1000 -o /tmp/test_camera1.mjpeg"
+            print(f"Testing camera 0 with: {test_cmd}")
+            test_result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            if test_result.returncode == 0:
+                print("Camera 0 test successful")
+                if os.path.exists("/tmp/test_camera1.mjpeg"):
+                    test_size = os.path.getsize("/tmp/test_camera1.mjpeg")
+                    print(f"Test file size: {test_size} bytes")
+                    os.remove("/tmp/test_camera1.mjpeg")
+            else:
+                print(f"Camera 0 test failed. stdout: {test_result.stdout}")
+                print(f"Camera 0 test failed. stderr: {test_result.stderr}")
+        except Exception as e:
+            print(f"Camera 0 test error: {e}")
+        
         # Use MJPEG format for recording (camera 0 is the first camera)
         cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
@@ -442,12 +467,18 @@ class MultiCameraRecorder:
             print(f"Starting Camera 1 with command: {cmd}")
             print(f"Output file: {mjpeg_filepath}")
             
-            # Start the process
+            # Check if output directory exists
+            if not self.recordings_dir.exists():
+                print(f"Creating recordings directory: {self.recordings_dir}")
+                self.recordings_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Start the process with real-time output
             self.camera1_process = subprocess.Popen(
                 cmd, 
                 shell=True, 
                 stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                bufsize=0  # Unbuffered output
             )
             
             # Store filenames for conversion later
@@ -457,10 +488,26 @@ class MultiCameraRecorder:
             # Check if process started successfully
             if self.camera1_process.poll() is None:
                 print(f"Camera 1 recording started successfully: {mjpeg_filename}")
-                # Wait a moment and check again
-                time.sleep(0.2)
+                
+                # Wait a moment and check if file is being created
+                time.sleep(1.0)  # Wait longer to see if file is created
+                
                 if self.camera1_process.poll() is None:
-                    print("Camera 1 is running properly")
+                    print("Camera 1 is still running")
+                    
+                    # Check if file exists and has content
+                    if mjpeg_filepath.exists():
+                        file_size = mjpeg_filepath.stat().st_size
+                        print(f"Camera 1 file exists with size: {file_size} bytes")
+                        
+                        # Monitor file growth
+                        initial_size = file_size
+                        time.sleep(2.0)  # Wait 2 more seconds
+                        if mjpeg_filepath.exists():
+                            new_size = mjpeg_filepath.stat().st_size
+                            print(f"Camera 1 file size after 2s: {new_size} bytes (growth: {new_size - initial_size})")
+                    else:
+                        print(f"Camera 1 file does not exist: {mjpeg_filepath}")
                 else:
                     stdout, stderr = self.camera1_process.communicate()
                     print(f"Camera 1 stopped unexpectedly. stdout: {stdout.decode()}")
@@ -472,6 +519,8 @@ class MultiCameraRecorder:
                 
         except Exception as e:
             print(f"Error starting camera 1: {e}")
+            import traceback
+            traceback.print_exc()
     
     def start_camera2_recording(self, timestamp):
         """Start RPi camera 2 recording"""
