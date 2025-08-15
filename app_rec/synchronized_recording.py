@@ -241,277 +241,219 @@ class SynchronizedRecorder:
         print("🎉 All camera threads started and ready for sampling")
         print(f"📊 Thread status: cam1={self.camera_threads['cam1'].is_alive()}, cam2={self.camera_threads['cam2'].is_alive()}, cam3={self.camera_threads['cam3'].is_alive()}")
     
+    def stop_rpicam_processes(self):
+        """Stop any running rpicam-vid processes to free up camera devices"""
+        try:
+            # Kill any existing rpicam-vid processes
+            subprocess.run(["pkill", "-f", "rpicam-vid"], capture_output=True)
+            time.sleep(0.5)  # Give time for processes to stop
+            print("🔄 Stopped any running rpicam-vid processes")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not stop rpicam-vid processes: {e}")
+
     def csi_camera1_thread(self):
         """Thread for CSI Camera 1 (camera 0) frame sampling"""
-        print("🔧 CSI Camera 1 thread starting...")
+        print(f"🚀 Starting CSI Camera 1 thread")
         
-        # Kill any existing rpicam-vid processes for camera 0
-        try:
-            subprocess.run("pkill -f 'rpicam-vid.*camera 0'", shell=True, capture_output=True)
-            time.sleep(1.0)
-            print("🗑️ Killed any existing camera 0 processes")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not kill existing processes: {e}")
+        # Stop any running rpicam-vid processes to free up camera 0
+        self.stop_rpicam_processes()
         
-        # Use rpicam-vid to record MJPEG and extract frames with ffmpeg
-        timestamp = self.get_timestamp()
-        mjpeg_filename = f"camera1_{timestamp}.mjpeg"
-        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        # Start recording MJPEG file in background
+        mjpeg_filepath = self.recordings_dir / "cam1_recording.mjpeg"
+        cmd = f"rpicam-vid --camera 0 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Command to record MJPEG
-        cmd = f"rpicam-vid --camera 0 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-        print(f"🎬 Starting CSI Camera 1 recording: {cmd}")
+        print(f"📹 cam1: Started MJPEG recording process (PID: {process.pid})")
         
-        try:
-            process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print("✅ CSI Camera 1 recording started successfully")
-            
-            # Wait for MJPEG file to be created
-            max_wait_time = 10.0
-            wait_start = time.time()
-            print(f"⏳ Waiting for cam1 MJPEG file to be created...")
-            
-            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
-                time.sleep(0.5)
-                elapsed = time.time() - wait_start
-                print(f"⏳ Still waiting for cam1 MJPEG file... ({elapsed:.1f}s)")
-            
-            if mjpeg_filepath.exists():
-                file_size = mjpeg_filepath.stat().st_size
-                print(f"✅ cam1: MJPEG file created successfully, size: {file_size} bytes")
-            else:
-                print(f"❌ cam1: MJPEG file not created after {max_wait_time}s")
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    print(f"❌ cam1: Process failed. stderr: {stderr.decode()}")
-                    return
-                else:
-                    print(f"⚠️ cam1: Process still running but no file created - continuing anyway")
-            
-            print("🔄 CSI Camera 1 monitoring loop started")
-            
-            # Main monitoring loop
-            while not self.stop_event.is_set():
+        # Wait for MJPEG file to be created
+        max_wait_time = 10
+        start_time = time.time()
+        while not mjpeg_filepath.exists() and time.time() - start_time < max_wait_time:
+            time.sleep(0.1)
+        
+        if not mjpeg_filepath.exists():
+            print(f"❌ cam1: MJPEG file not created within {max_wait_time} seconds")
+            return
+        
+        print(f"✅ cam1: MJPEG file created successfully")
+        
+        # Main sampling loop
+        while not self.stop_event.is_set():
+            # Wait for sampling signal
+            if self.sample_event.wait(timeout=0.1):
                 current_time = time.time()
+                print(f"📸 cam1: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                 
-                # Wait for sampling signal from timer
-                if self.sampling_active:
-                    # Wait for the sampling event (with timeout to check stop_event)
-                    if self.sample_event.wait(timeout=0.1):
-                        should_sample = True
-                        print(f"📸 cam1: Received sampling signal at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
-                    else:
-                        should_sample = False
-                else:
-                    should_sample = False
-                
-                if should_sample:
-                    print(f"📸 cam1: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
+                # Check if MJPEG file exists and has content
+                if mjpeg_filepath.exists():
+                    file_size = mjpeg_filepath.stat().st_size
+                    print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
                     
-                    # Check if we should stop before processing
-                    if self.stop_event.is_set():
-                        print("🛑 cam1: Stop event detected, exiting frame capture")
-                        break
-                    
-                    # Check if MJPEG file exists and has content
-                    if mjpeg_filepath.exists():
-                        file_size = mjpeg_filepath.stat().st_size
-                        print(f"📁 cam1: MJPEG file exists, size: {file_size} bytes")
+                    if file_size > 0:
+                        # Stop rpicam-vid process temporarily to free up camera
+                        self.stop_rpicam_processes()
+                        time.sleep(0.2)  # Give time for camera to be freed
                         
-                        if file_size > 0:
-                            # Use direct VideoCapture to get the latest frame
-                            try:
-                                # Open the camera directly
-                                cap = cv2.VideoCapture(0)
+                        # Use direct VideoCapture to get the latest frame
+                        try:
+                            # Open the camera directly
+                            cap = cv2.VideoCapture(0)
+                            
+                            if cap.isOpened():
+                                # Set camera properties for better performance
+                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                                cap.set(cv2.CAP_PROP_FPS, 30)
                                 
-                                if cap.isOpened():
-                                    # Set camera properties for better performance
-                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                                    cap.set(cv2.CAP_PROP_FPS, 30)
+                                # Read the latest frame
+                                ret, frame = cap.read()
+                                cap.release()
+                                
+                                if ret and frame is not None:
+                                    print(f"✅ cam1: Frame captured directly, shape: {frame.shape}")
                                     
-                                    # Read the latest frame
-                                    ret, frame = cap.read()
-                                    cap.release()
+                                    # Add frame number and timestamp overlay
+                                    frame_number = len(self.camera_frames["cam1"]) + 1
+                                    timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                     
-                                    if ret and frame is not None:
-                                        print(f"✅ cam1: Frame captured directly, shape: {frame.shape}")
-                                        
-                                        # Add frame number and timestamp overlay
-                                        frame_number = len(self.camera_frames["cam1"]) + 1
-                                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                        
-                                        # Add overlays
-                                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        
-                                        # Store frame with timestamp
-                                        with self.frame_locks["cam1"]:
-                                            self.camera_frames["cam1"].append((frame, current_time))
-                                        
-                                        print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                    else:
-                                        print(f"❌ cam1: Failed to read frame from camera")
+                                    # Add overlays
+                                    cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                    cv2.putText(frame, "CAM1", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    
+                                    # Store frame with timestamp
+                                    with self.frame_locks["cam1"]:
+                                        self.camera_frames["cam1"].append((frame, current_time))
+                                    
+                                    print(f"[SAMPLING] cam1: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                 else:
-                                    print(f"❌ cam1: Could not open camera 0")
-                            except Exception as e:
-                                print(f"❌ cam1: Error capturing frame: {e}")
-                        else:
-                            print(f"❌ cam1: MJPEG file is empty (size: {file_size})")
+                                    print(f"❌ cam1: Failed to read frame from camera")
+                            else:
+                                print(f"❌ cam1: Could not open camera 0")
+                        except Exception as e:
+                            print(f"❌ cam1: Error capturing frame: {e}")
+                        
+                        # Restart rpicam-vid process
+                        cmd = f"rpicam-vid --camera 0 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+                        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        print(f"🔄 cam1: Restarted MJPEG recording process")
                     else:
-                        print(f"❌ cam1: MJPEG file does not exist")
+                        print(f"❌ cam1: MJPEG file is empty (size: {file_size})")
+                else:
+                    print(f"❌ cam1: MJPEG file does not exist")
                 
-                time.sleep(0.01)  # Small delay to prevent busy waiting
-            
-            # Cleanup
-            print("🛑 cam1: Stopping recording process...")
-            process.terminate()
-            process.wait(timeout=5)
-            print("✅ cam1: Recording process stopped")
-            
-        except Exception as e:
-            print(f"❌ cam1: Error in camera thread: {e}")
-            import traceback
-            traceback.print_exc()
+                # Clear the event for next cycle
+                self.sample_event.clear()
         
-        print("🛑 CSI Camera 1 thread stopped")
+        # Cleanup
+        print(f"🛑 cam1: Stopping recording process...")
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=2)
+        print(f"✅ cam1: Recording process stopped")
+        print(f"🛑 CSI Camera 1 thread stopped")
     
     def csi_camera2_thread(self):
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
-        print("🔧 CSI Camera 2 thread starting...")
+        print(f"🚀 Starting CSI Camera 2 thread")
         
-        # Kill any existing rpicam-vid processes for camera 1
-        try:
-            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
-            time.sleep(1.0)
-            print("🗑️ Killed any existing camera 1 processes")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not kill existing processes: {e}")
+        # Stop any running rpicam-vid processes to free up camera 1
+        self.stop_rpicam_processes()
         
-        # Use rpicam-vid to record MJPEG and extract frames with ffmpeg
-        timestamp = self.get_timestamp()
-        mjpeg_filename = f"camera2_{timestamp}.mjpeg"
-        mjpeg_filepath = self.recordings_dir / mjpeg_filename
+        # Start recording MJPEG file in background
+        mjpeg_filepath = self.recordings_dir / "cam2_recording.mjpeg"
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Command to record MJPEG - use camera 1
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
-        print(f"🎬 Starting CSI Camera 2 recording: {cmd}")
+        print(f"📹 cam2: Started MJPEG recording process (PID: {process.pid})")
         
-        try:
-            process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print("✅ CSI Camera 2 recording started successfully")
-            
-            # Wait for MJPEG file to be created
-            max_wait_time = 15.0  # Longer wait for camera 1
-            wait_start = time.time()
-            print(f"⏳ Waiting for cam2 MJPEG file to be created...")
-            
-            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
-                time.sleep(0.5)
-                elapsed = time.time() - wait_start
-                print(f"⏳ Still waiting for cam2 MJPEG file... ({elapsed:.1f}s)")
-            
-            if mjpeg_filepath.exists():
-                file_size = mjpeg_filepath.stat().st_size
-                print(f"✅ cam2: MJPEG file created successfully, size: {file_size} bytes")
-            else:
-                print(f"❌ cam2: MJPEG file not created after {max_wait_time}s")
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    print(f"❌ cam2: Process failed. stderr: {stderr.decode()}")
-                    return
-                else:
-                    print(f"⚠️ cam2: Process still running but no file created - continuing anyway")
-            
-            print("🔄 CSI Camera 2 monitoring loop started")
-            
-            # Main monitoring loop
-            while not self.stop_event.is_set():
+        # Wait for MJPEG file to be created
+        max_wait_time = 10
+        start_time = time.time()
+        while not mjpeg_filepath.exists() and time.time() - start_time < max_wait_time:
+            time.sleep(0.1)
+        
+        if not mjpeg_filepath.exists():
+            print(f"❌ cam2: MJPEG file not created within {max_wait_time} seconds")
+            return
+        
+        print(f"✅ cam2: MJPEG file created successfully")
+        
+        # Main sampling loop
+        while not self.stop_event.is_set():
+            # Wait for sampling signal
+            if self.sample_event.wait(timeout=0.1):
                 current_time = time.time()
+                print(f"📸 cam2: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                 
-                # Wait for sampling signal from timer
-                if self.sampling_active:
-                    # Wait for the sampling event (with timeout to check stop_event)
-                    if self.sample_event.wait(timeout=0.1):
-                        should_sample = True
-                        print(f"📸 cam2: Received sampling signal at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
-                    else:
-                        should_sample = False
-                else:
-                    should_sample = False
-                
-                if should_sample:
-                    print(f"📸 cam2: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
+                # Check if MJPEG file exists and has content
+                if mjpeg_filepath.exists():
+                    file_size = mjpeg_filepath.stat().st_size
+                    print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
                     
-                    # Check if we should stop before processing
-                    if self.stop_event.is_set():
-                        print("🛑 cam2: Stop event detected, exiting frame capture")
-                        break
-                    
-                    # Check if MJPEG file exists and has content
-                    if mjpeg_filepath.exists():
-                        file_size = mjpeg_filepath.stat().st_size
-                        print(f"📁 cam2: MJPEG file exists, size: {file_size} bytes")
+                    if file_size > 0:
+                        # Stop rpicam-vid process temporarily to free up camera
+                        self.stop_rpicam_processes()
+                        time.sleep(0.2)  # Give time for camera to be freed
                         
-                        if file_size > 0:
-                            # Use direct VideoCapture to get the latest frame
-                            try:
-                                # Open the camera directly
-                                cap = cv2.VideoCapture(1)
+                        # Use direct VideoCapture to get the latest frame
+                        try:
+                            # Open the camera directly
+                            cap = cv2.VideoCapture(1)
+                            
+                            if cap.isOpened():
+                                # Set camera properties for better performance
+                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                                cap.set(cv2.CAP_PROP_FPS, 30)
                                 
-                                if cap.isOpened():
-                                    # Set camera properties for better performance
-                                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                                    cap.set(cv2.CAP_PROP_FPS, 30)
+                                # Read the latest frame
+                                ret, frame = cap.read()
+                                cap.release()
+                                
+                                if ret and frame is not None:
+                                    print(f"✅ cam2: Frame captured directly, shape: {frame.shape}")
                                     
-                                    # Read the latest frame
-                                    ret, frame = cap.read()
-                                    cap.release()
+                                    # Add frame number and timestamp overlay
+                                    frame_number = len(self.camera_frames["cam2"]) + 1
+                                    timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                                     
-                                    if ret and frame is not None:
-                                        print(f"✅ cam2: Frame captured directly, shape: {frame.shape}")
-                                        
-                                        # Add frame number and timestamp overlay
-                                        frame_number = len(self.camera_frames["cam2"]) + 1
-                                        timestamp_str = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                                        
-                                        # Add overlays
-                                        cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                                        cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                                        
-                                        # Store frame with timestamp
-                                        with self.frame_locks["cam2"]:
-                                            self.camera_frames["cam2"].append((frame, current_time))
-                                        
-                                        print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                                    else:
-                                        print(f"❌ cam2: Failed to read frame from camera")
+                                    # Add overlays
+                                    cv2.putText(frame, f"Frame: {frame_number}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                                    cv2.putText(frame, "CAM2", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                    
+                                    # Store frame with timestamp
+                                    with self.frame_locks["cam2"]:
+                                        self.camera_frames["cam2"].append((frame, current_time))
+                                    
+                                    print(f"[SAMPLING] cam2: {frame_number} frames at {datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                                 else:
-                                    print(f"❌ cam2: Could not open camera 1")
-                            except Exception as e:
-                                print(f"❌ cam2: Error capturing frame: {e}")
-                        else:
-                            print(f"❌ cam2: MJPEG file is empty (size: {file_size})")
+                                    print(f"❌ cam2: Failed to read frame from camera")
+                            else:
+                                print(f"❌ cam2: Could not open camera 1")
+                        except Exception as e:
+                            print(f"❌ cam2: Error capturing frame: {e}")
+                        
+                        # Restart rpicam-vid process
+                        cmd = f"rpicam-vid --camera 1 --codec mjpeg -t 0 -o {mjpeg_filepath}"
+                        process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        print(f"🔄 cam2: Restarted MJPEG recording process")
                     else:
-                        print(f"❌ cam2: MJPEG file does not exist")
+                        print(f"❌ cam2: MJPEG file is empty (size: {file_size})")
+                else:
+                    print(f"❌ cam2: MJPEG file does not exist")
                 
-                time.sleep(0.01)  # Small delay to prevent busy waiting
-            
-            # Cleanup
-            print("🛑 cam2: Stopping recording process...")
-            process.terminate()
-            process.wait(timeout=5)
-            print("✅ cam2: Recording process stopped")
-            
-        except Exception as e:
-            print(f"❌ cam2: Error in camera thread: {e}")
-            import traceback
-            traceback.print_exc()
+                # Clear the event for next cycle
+                self.sample_event.clear()
         
-        print("🛑 CSI Camera 2 thread stopped")
+        # Cleanup
+        print(f"🛑 cam2: Stopping recording process...")
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=2)
+        print(f"✅ cam2: Recording process stopped")
+        print(f"🛑 CSI Camera 2 thread stopped")
     
     def depthai_camera_thread(self):
         """Thread for DepthAI camera frame sampling"""
