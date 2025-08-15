@@ -156,7 +156,8 @@ class SynchronizedRecorder:
                     print(f"⏰ TIMER: Signaling all cameras to sample at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
                     self.sample_event.set()  # Signal all cameras to sample
                     self.next_sample_time += self.sample_interval
-                    time.sleep(0.1)  # Small delay to prevent multiple signals
+                    time.sleep(0.2)  # Wait for all cameras to receive the signal
+                    self.sample_event.clear()  # Clear the event for next time
                 else:
                     time.sleep(0.01)  # Check every 10ms
         
@@ -287,7 +288,6 @@ class SynchronizedRecorder:
                 if self.sampling_active:
                     # Wait for the sampling event (with timeout to check stop_event)
                     if self.sample_event.wait(timeout=0.1):
-                        self.sample_event.clear()  # Clear the event for next time
                         should_sample = True
                         print(f"📸 cam1: Received sampling signal at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
                     else:
@@ -351,11 +351,11 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        # Kill any existing rpicam-vid processes for camera 1
+        # Kill any existing rpicam-vid processes for camera 2
         try:
-            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
+            subprocess.run("pkill -f 'rpicam-vid.*camera 2'", shell=True, capture_output=True)
             time.sleep(1.0)
-            print("Killed any existing camera 1 processes")
+            print("Killed any existing camera 2 processes")
         except Exception as e:
             print(f"Warning: Could not kill existing processes: {e}")
         
@@ -364,8 +364,8 @@ class SynchronizedRecorder:
         mjpeg_filename = f"camera2_{timestamp}.mjpeg"
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        # Command to record MJPEG - use camera 1 directly
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Command to record MJPEG - use camera 2
+        cmd = f"rpicam-vid --camera 2 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
@@ -427,7 +427,6 @@ class SynchronizedRecorder:
                 if self.sampling_active:
                     # Wait for the sampling event (with timeout to check stop_event)
                     if self.sample_event.wait(timeout=0.1):
-                        self.sample_event.clear()  # Clear the event for next time
                         should_sample = True
                         print(f"📸 cam2: Received sampling signal at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
                     else:
@@ -538,7 +537,6 @@ class SynchronizedRecorder:
                         if self.sampling_active:
                             # Wait for the sampling event (with timeout to check stop_event)
                             if self.sample_event.wait(timeout=0.1):
-                                self.sample_event.clear()  # Clear the event for next time
                                 should_sample = True
                                 print(f"📸 cam3: Received sampling signal at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}")
                             else:
