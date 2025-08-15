@@ -383,14 +383,19 @@ class MultiCameraRecorder:
         # Get timestamp for this recording session
         timestamp = self.get_timestamp()
         
+        # Start all cameras with minimal delays for synchronization
+        print("Starting all cameras with synchronization...")
+        
         # Start camera 1 (RPi camera 1)
         self.start_camera1_recording(timestamp)
+        time.sleep(0.05)  # Small delay to prevent conflicts
         
         # Start camera 2 (RPi camera 2) 
         self.start_camera2_recording(timestamp)
+        time.sleep(0.05)  # Small delay to prevent conflicts
         
-        # Start camera 3 (DepthAI) and IMU
-        self.start_depthai_recording(timestamp)
+        # Start camera 3 (DepthAI) and IMU - start immediately
+        self.start_depthai_recording_sync(timestamp)
         
         print(f"Recording started - Session: {timestamp}")
         print(f"DEBUG: recording={self.recording}, event_set={self.stop_recording_event.is_set()}")
@@ -502,8 +507,46 @@ class MultiCameraRecorder:
             print(f"Error starting camera 2: {e}")
             print("Camera 2 exception - check hardware connection")
     
+    def start_depthai_recording_sync(self, timestamp):
+        """Start DepthAI camera, IMU, and GPS recording with immediate start"""
+        # Create IMU, gyro, skeleton, and GPS files
+        imu_filename = f"imu_vector_{timestamp}.json"
+        gyro_filename = f"gyroscope_{timestamp}.json"
+        skeleton_filename = f"skeleton_{timestamp}.json"
+        gps_filename = f"gps_{timestamp}.json"
+        
+        self.imu_file = open(self.recordings_dir / imu_filename, 'w')
+        self.gyro_file = open(self.recordings_dir / gyro_filename, 'w')
+        self.skeleton_file = open(self.recordings_dir / skeleton_filename, 'w')
+        self.gps_file = open(self.recordings_dir / gps_filename, 'w')
+        
+        # Start GPS recording thread (this can be async)
+        self.gps_thread = threading.Thread(
+            target=self.gps_recording_thread,
+            args=(timestamp,)
+        )
+        self.gps_thread.daemon = True
+        self.gps_thread.start()
+        
+        # Start DepthAI recording thread with high priority and immediate start
+        self.depthai_thread = threading.Thread(
+            target=self.depthai_recording_thread,
+            args=(timestamp,)
+        )
+        self.depthai_thread.daemon = True
+        self.depthai_thread.start()
+        
+        # Wait a very short time to ensure the thread starts
+        time.sleep(0.01)
+        
+        print(f"DepthAI and GPS recording started: {timestamp}")
+        if self.skeleton_enabled:
+            print("Skeleton recognition enabled")
+        else:
+            print("Skeleton recognition disabled")
+    
     def start_depthai_recording(self, timestamp):
-        """Start DepthAI camera, IMU, and GPS recording"""
+        """Start DepthAI camera, IMU, and GPS recording (legacy async version)"""
         # Create IMU, gyro, skeleton, and GPS files
         imu_filename = f"imu_vector_{timestamp}.json"
         gyro_filename = f"gyroscope_{timestamp}.json"
