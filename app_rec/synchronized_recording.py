@@ -134,50 +134,30 @@ class SynchronizedRecorder:
     
     def check_available_cameras(self):
         """Check what cameras are available on the system"""
-        print("[INFO] Checking available cameras...")
+        print("🔍 Checking available cameras...")
         
-        # Check only the 2 CSI cameras we actually use
-        csi_cameras = []
-        for i in range(2):  # Only check camera 0 and 1
-            device_path = f"/dev/video{i}"
-            if os.path.exists(device_path):
-                try:
-                    cap = cv2.VideoCapture(device_path)
-                    if cap.isOpened():
-                        ret, frame = cap.read()
-                        if ret:
-                            print(f"✅ CSI Camera {i} found at {device_path}")
-                            csi_cameras.append(device_path)
-                        else:
-                            print(f"⚠️  CSI Camera {i} at {device_path} - device exists but no frame")
-                    else:
-                        print(f"❌ CSI Camera {i} at {device_path} - device exists but not accessible")
-                    cap.release()
-                except Exception as e:
-                    print(f"❌ CSI Camera {i} at {device_path} - Error: {e}")
-            else:
-                print(f"❌ CSI Camera {i} at {device_path} - not found")
+        # Check which cameras are actually working
+        working_cameras = []
+        for camera_idx in [0, 1, 2]:  # Check camera 0, 1, 2
+            try:
+                print(f"🔍 Testing camera {camera_idx}...")
+                test_cmd = f"rpicam-vid --camera {camera_idx} --codec mjpeg --nopreview --inline -t 1000 -o /tmp/test_cam{camera_idx}.mjpeg"
+                result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=5)
+                
+                if result.returncode == 0 and os.path.exists(f"/tmp/test_cam{camera_idx}.mjpeg"):
+                    file_size = os.path.getsize(f"/tmp/test_cam{camera_idx}.mjpeg")
+                    print(f"✅ Camera {camera_idx} works - file size: {file_size} bytes")
+                    working_cameras.append(camera_idx)
+                    os.remove(f"/tmp/test_cam{camera_idx}.mjpeg")
+                else:
+                    print(f"❌ Camera {camera_idx} failed - return code: {result.returncode}")
+                    if result.stderr:
+                        print(f"   Error: {result.stderr}")
+            except Exception as e:
+                print(f"❌ Camera {camera_idx} error: {e}")
         
-        # Check DepthAI camera
-        try:
-            # Try to create a simple DepthAI pipeline to test
-            pipeline = dai.Pipeline()
-            cam = pipeline.create(dai.node.ColorCamera)
-            cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-            cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-            
-            xout = pipeline.create(dai.node.XLinkOut)
-            xout.setStreamName("video")
-            cam.video.link(xout.input)
-            
-            device = dai.Device(pipeline)
-            print("✅ DepthAI camera found and accessible")
-            device.close()
-        except Exception as e:
-            print(f"❌ DepthAI camera not available: {e}")
-        
-        print(f"[SUMMARY] Found {len(csi_cameras)} working CSI cameras: {csi_cameras}")
-        return csi_cameras
+        print(f"📋 Available cameras: {working_cameras}")
+        return working_cameras
     
     def get_timestamp(self):
         """Get current timestamp for filenames"""
@@ -376,11 +356,28 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        # Kill any existing rpicam-vid processes for camera 1
+        # Check available cameras first
+        working_cameras = self.check_available_cameras()
+        
+        # Choose the best camera for cam2 (prefer camera 1, fallback to others)
+        if 1 in working_cameras:
+            selected_camera = 1
+            print(f"✅ Using camera 1 for cam2")
+        elif 2 in working_cameras:
+            selected_camera = 2
+            print(f"✅ Using camera 2 for cam2 (fallback)")
+        elif 0 in working_cameras:
+            selected_camera = 0
+            print(f"⚠️ Using camera 0 for cam2 (fallback - this might conflict with cam1)")
+        else:
+            print(f"❌ No working cameras found for cam2")
+            return
+        
+        # Kill any existing rpicam-vid processes for the selected camera
         try:
-            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
-            time.sleep(1.0)  # Wait for process to be killed
-            print("Killed any existing camera 1 processes")
+            subprocess.run(f"pkill -f 'rpicam-vid.*camera {selected_camera}'", shell=True, capture_output=True)
+            time.sleep(1.0)
+            print(f"Killed any existing camera {selected_camera} processes")
         except Exception as e:
             print(f"Warning: Could not kill existing processes: {e}")
         
@@ -389,8 +386,8 @@ class SynchronizedRecorder:
         mjpeg_filename = f"camera2_{timestamp}.mjpeg"
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        # Command to record MJPEG - use camera 1 directly (no testing)
-        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Command to record MJPEG - use the selected camera
+        cmd = f"rpicam-vid --camera {selected_camera} --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
