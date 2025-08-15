@@ -132,33 +132,6 @@ class SynchronizedRecorder:
         
         print("Camera cleanup complete")
     
-    def check_available_cameras(self):
-        """Check what cameras are available on the system"""
-        print("🔍 Checking available cameras...")
-        
-        # Check which cameras are actually working
-        working_cameras = []
-        for camera_idx in [0, 1, 2]:  # Check camera 0, 1, 2
-            try:
-                print(f"🔍 Testing camera {camera_idx}...")
-                test_cmd = f"rpicam-vid --camera {camera_idx} --codec mjpeg --nopreview --inline -t 1000 -o /tmp/test_cam{camera_idx}.mjpeg"
-                result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True, timeout=5)
-                
-                if result.returncode == 0 and os.path.exists(f"/tmp/test_cam{camera_idx}.mjpeg"):
-                    file_size = os.path.getsize(f"/tmp/test_cam{camera_idx}.mjpeg")
-                    print(f"✅ Camera {camera_idx} works - file size: {file_size} bytes")
-                    working_cameras.append(camera_idx)
-                    os.remove(f"/tmp/test_cam{camera_idx}.mjpeg")
-                else:
-                    print(f"❌ Camera {camera_idx} failed - return code: {result.returncode}")
-                    if result.stderr:
-                        print(f"   Error: {result.stderr}")
-            except Exception as e:
-                print(f"❌ Camera {camera_idx} error: {e}")
-        
-        print(f"📋 Available cameras: {working_cameras}")
-        return working_cameras
-    
     def get_timestamp(self):
         """Get current timestamp for filenames"""
         return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -295,13 +268,13 @@ class SynchronizedRecorder:
                 with self.sampling_lock:
                     if self.sampling_active and current_time >= self.next_sample_time:
                         should_sample = True
-                        # Only update the clock once per sampling cycle
+                        # Only update the clock once per sampling cycle (first camera to sample)
                         if current_time >= self.next_sample_time:
                             self.next_sample_time += self.sample_interval
-                            print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                            print(f"🔄 ALL CAMERAS: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                 
                 if should_sample:
-                    print(f"📸 cam1: Starting frame capture...")
+                    print(f"📸 cam1: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     # Check if MJPEG file exists and has content
                     if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
                         print(f"📁 cam1: MJPEG file exists, size: {mjpeg_filepath.stat().st_size} bytes")
@@ -356,28 +329,11 @@ class SynchronizedRecorder:
         """Thread for CSI Camera 2 (camera 1) frame sampling"""
         print("CSI Camera 2 thread starting...")
         
-        # Check available cameras first
-        working_cameras = self.check_available_cameras()
-        
-        # Choose the best camera for cam2 (prefer camera 1, fallback to others)
-        if 1 in working_cameras:
-            selected_camera = 1
-            print(f"✅ Using camera 1 for cam2")
-        elif 2 in working_cameras:
-            selected_camera = 2
-            print(f"✅ Using camera 2 for cam2 (fallback)")
-        elif 0 in working_cameras:
-            selected_camera = 0
-            print(f"⚠️ Using camera 0 for cam2 (fallback - this might conflict with cam1)")
-        else:
-            print(f"❌ No working cameras found for cam2")
-            return
-        
-        # Kill any existing rpicam-vid processes for the selected camera
+        # Kill any existing rpicam-vid processes for camera 1
         try:
-            subprocess.run(f"pkill -f 'rpicam-vid.*camera {selected_camera}'", shell=True, capture_output=True)
+            subprocess.run("pkill -f 'rpicam-vid.*camera 1'", shell=True, capture_output=True)
             time.sleep(1.0)
-            print(f"Killed any existing camera {selected_camera} processes")
+            print("Killed any existing camera 1 processes")
         except Exception as e:
             print(f"Warning: Could not kill existing processes: {e}")
         
@@ -386,8 +342,8 @@ class SynchronizedRecorder:
         mjpeg_filename = f"camera2_{timestamp}.mjpeg"
         mjpeg_filepath = self.recordings_dir / mjpeg_filename
         
-        # Command to record MJPEG - use the selected camera
-        cmd = f"rpicam-vid --camera {selected_camera} --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
+        # Command to record MJPEG - use camera 1 directly
+        cmd = f"rpicam-vid --camera 1 --codec mjpeg --nopreview --inline -o {mjpeg_filepath}"
         
         try:
             print(f"Starting CSI Camera 2 recording: {cmd}")
@@ -408,27 +364,12 @@ class SynchronizedRecorder:
                 print(f"❌ CSI Camera 2 failed to start. stderr: {stderr.decode()}")
                 return
             
-            # Wait longer for MJPEG file to be created
-            print("⏳ Waiting for cam2 MJPEG file to be created...")
-            max_wait_time = 10.0  # Wait up to 10 seconds
-            wait_start = time.time()
-            while not mjpeg_filepath.exists() and (time.time() - wait_start) < max_wait_time:
-                time.sleep(0.5)
-                print(f"⏳ Still waiting for cam2 MJPEG file... ({time.time() - wait_start:.1f}s)")
-            
             # Check if MJPEG file is being created
             if mjpeg_filepath.exists():
                 initial_size = mjpeg_filepath.stat().st_size
                 print(f"✅ cam2: MJPEG file created, initial size: {initial_size} bytes")
             else:
-                print(f"❌ cam2: MJPEG file not created after {max_wait_time}s - process may have failed")
-                # Check if process is still running
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    print(f"❌ cam2: Process failed. stderr: {stderr.decode()}")
-                    return
-                else:
-                    print(f"⚠️ cam2: Process still running but no file created - continuing anyway")
+                print(f"⚠️ cam2: MJPEG file not created yet - continuing anyway")
             
             print("✅ CSI Camera 2 recording started successfully")
             
@@ -450,13 +391,13 @@ class SynchronizedRecorder:
                 with self.sampling_lock:
                     if self.sampling_active and current_time >= self.next_sample_time:
                         should_sample = True
-                        # Only update the clock once per sampling cycle
+                        # Only update the clock once per sampling cycle (first camera to sample)
                         if current_time >= self.next_sample_time:
                             self.next_sample_time += self.sample_interval
-                            print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                            print(f"🔄 ALL CAMERAS: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                 
                 if should_sample:
-                    print(f"📸 cam2: Starting frame capture...")
+                    print(f"📸 cam2: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                     # Check if MJPEG file exists and has content
                     current_size = mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0
                     if mjpeg_filepath.exists() and current_size > 0:
@@ -559,13 +500,13 @@ class SynchronizedRecorder:
                         with self.sampling_lock:
                             if self.sampling_active and current_time >= self.next_sample_time:
                                 should_sample = True
-                                # Only update the clock once per sampling cycle
+                                # Only update the clock once per sampling cycle (first camera to sample)
                                 if current_time >= self.next_sample_time:
                                     self.next_sample_time += self.sample_interval
-                                    print(f"🔄 Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
+                                    print(f"🔄 ALL CAMERAS: Updated next sample time to: {datetime.datetime.fromtimestamp(self.next_sample_time).strftime('%H:%M:%S.%f')[:-3]}")
                         
                         if should_sample:
-                            print(f"📸 cam3: Starting frame capture...")
+                            print(f"📸 cam3: Starting frame capture at {datetime.datetime.fromtimestamp(current_time).strftime('%H:%M:%S.%f')[:-3]}...")
                             with self.frame_locks["cam3"]:
                                 self.camera_frames["cam3"].append({
                                     'frame': frame.copy(),
