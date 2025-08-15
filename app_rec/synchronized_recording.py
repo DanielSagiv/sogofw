@@ -269,8 +269,15 @@ class SynchronizedRecorder:
             last_sample_time = 0
             sample_interval = 0.5
             
-            while not self.stop_event.is_set() and process.poll() is None:
+            print("CSI Camera 1 monitoring loop started")
+            
+            while not self.stop_event.is_set():
                 current_time = time.time()
+                
+                # Check if process is still running
+                if process.poll() is not None:
+                    print("❌ CSI Camera 1 process stopped unexpectedly")
+                    break
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed
                 if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
@@ -303,6 +310,10 @@ class SynchronizedRecorder:
                             print(f"❌ Failed to open CSI Cam 0 MJPEG file for reading")
                     else:
                         print(f"❌ CSI Cam 0 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
+                else:
+                    # Debug: show when not sampling
+                    if self.sampling_active:
+                        print(f"CSI Cam 0: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -379,8 +390,15 @@ class SynchronizedRecorder:
             last_sample_time = 0
             sample_interval = 0.5
             
-            while not self.stop_event.is_set() and process.poll() is None:
+            print("CSI Camera 2 monitoring loop started")
+            
+            while not self.stop_event.is_set():
                 current_time = time.time()
+                
+                # Check if process is still running
+                if process.poll() is not None:
+                    print("❌ CSI Camera 2 process stopped unexpectedly")
+                    break
                 
                 # Sample frame if sampling is active and 0.5 seconds have passed
                 if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
@@ -413,6 +431,10 @@ class SynchronizedRecorder:
                             print(f"❌ Failed to open CSI Cam 1 MJPEG file for reading")
                     else:
                         print(f"❌ CSI Cam 1 MJPEG file not ready (size: {mjpeg_filepath.stat().st_size if mjpeg_filepath.exists() else 0})")
+                else:
+                    # Debug: show when not sampling
+                    if self.sampling_active:
+                        print(f"CSI Cam 1: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
