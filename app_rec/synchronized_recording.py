@@ -67,6 +67,11 @@ class SynchronizedRecorder:
             "cam3": threading.Lock()
         }
         
+        # Shared sampling control
+        self.last_sample_time = 0
+        self.sample_interval = 0.5
+        self.sampling_lock = threading.Lock()
+        
         # Initialize LCD
         if LCD_AVAILABLE:
             try:
@@ -266,8 +271,6 @@ class SynchronizedRecorder:
             
             # Extract frames from MJPEG file every 0.5 seconds
             frame_count = 0
-            last_sample_time = 0
-            sample_interval = 0.5
             
             print("CSI Camera 1 monitoring loop started")
             
@@ -279,8 +282,13 @@ class SynchronizedRecorder:
                     print("❌ CSI Camera 1 process stopped unexpectedly")
                     break
                 
-                # Sample frame if sampling is active and 0.5 seconds have passed
-                if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
+                # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                with self.sampling_lock:
+                    should_sample = self.sampling_active and (current_time - self.last_sample_time) >= self.sample_interval
+                    if should_sample:
+                        self.last_sample_time = current_time
+                
+                if should_sample:
                     # Check if MJPEG file exists and has content
                     if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
                         # Read the latest frame from the MJPEG file
@@ -302,7 +310,6 @@ class SynchronizedRecorder:
                                         'timestamp_str': timestamp_str
                                     })
                                     print(f"[SAMPLING] cam1: {len(self.camera_frames['cam1'])} frames at {timestamp_str}")
-                                last_sample_time = current_time
                                 frame_count += 1
                             else:
                                 print(f"❌ Failed to read frame from cam1 MJPEG file")
@@ -314,7 +321,7 @@ class SynchronizedRecorder:
                 else:
                     # Debug: show when not sampling
                     if self.sampling_active:
-                        print(f"cam1: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
+                        print(f"cam1: Waiting for next sample interval ({(current_time - self.last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -424,8 +431,6 @@ class SynchronizedRecorder:
             
             # Extract frames from MJPEG file every 0.5 seconds
             frame_count = 0
-            last_sample_time = 0
-            sample_interval = 0.5
             
             print("CSI Camera 2 monitoring loop started")
             
@@ -437,8 +442,13 @@ class SynchronizedRecorder:
                     print("❌ CSI Camera 2 process stopped unexpectedly")
                     break
                 
-                # Sample frame if sampling is active and 0.5 seconds have passed
-                if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
+                # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                with self.sampling_lock:
+                    should_sample = self.sampling_active and (current_time - self.last_sample_time) >= self.sample_interval
+                    if should_sample:
+                        self.last_sample_time = current_time
+                
+                if should_sample:
                     # Check if MJPEG file exists and has content
                     if mjpeg_filepath.exists() and mjpeg_filepath.stat().st_size > 0:
                         # Read the latest frame from the MJPEG file
@@ -460,7 +470,6 @@ class SynchronizedRecorder:
                                         'timestamp_str': timestamp_str
                                     })
                                     print(f"[SAMPLING] cam2: {len(self.camera_frames['cam2'])} frames at {timestamp_str}")
-                                last_sample_time = current_time
                                 frame_count += 1
                             else:
                                 print(f"❌ Failed to read frame from cam2 MJPEG file")
@@ -472,7 +481,7 @@ class SynchronizedRecorder:
                 else:
                     # Debug: show when not sampling
                     if self.sampling_active:
-                        print(f"cam2: Waiting for next sample interval ({(current_time - last_sample_time):.1f}s since last)")
+                        print(f"cam2: Waiting for next sample interval ({(current_time - self.last_sample_time):.1f}s since last)")
                 
                 time.sleep(0.1)  # Check every 100ms
             
@@ -517,8 +526,6 @@ class SynchronizedRecorder:
                 qRgb = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
                 
                 frame_count = 0
-                last_sample_time = 0
-                sample_interval = 0.5  # Sample every 0.5 seconds
                 
                 while not self.stop_event.is_set():
                     inRgb = qRgb.tryGet()
@@ -533,8 +540,13 @@ class SynchronizedRecorder:
                         cv2.putText(frame, timestamp_str, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
                         cv2.putText(frame, "CAM3", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         
-                        # Sample frame if sampling is active and 0.5 seconds have passed
-                        if self.sampling_active and (current_time - last_sample_time) >= sample_interval:
+                        # Sample frame if sampling is active and 0.5 seconds have passed (shared timing)
+                        with self.sampling_lock:
+                            should_sample = self.sampling_active and (current_time - self.last_sample_time) >= self.sample_interval
+                            if should_sample:
+                                self.last_sample_time = current_time
+                        
+                        if should_sample:
                             with self.frame_locks["cam3"]:
                                 self.camera_frames["cam3"].append({
                                     'frame': frame.copy(),
@@ -543,7 +555,6 @@ class SynchronizedRecorder:
                                     'timestamp_str': timestamp_str
                                 })
                                 print(f"[SAMPLING] cam3: {len(self.camera_frames['cam3'])} frames at {timestamp_str}")
-                            last_sample_time = current_time
                         
                         frame_count += 1
                     
