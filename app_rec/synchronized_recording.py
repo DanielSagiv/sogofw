@@ -6,21 +6,16 @@ Samples frames from all cameras simultaneously and creates synchronized videos
 
 import cv2
 import depthai as dai
-import time
-import json
-import os
-import datetime
 import threading
+import time
+import datetime
 import subprocess
-import signal
+import pathlib
 import sys
-import serial
+import os
 from pathlib import Path
 from collections import deque
 import numpy as np
-import queue
-import msvcrt # For Windows kbhit
-import select # For non-blocking input
 
 # LCD Display (optional)
 try:
@@ -100,10 +95,6 @@ class SynchronizedRecorder:
                 print(f"LCD initialization failed: {e}")
         else:
             print("LCD display not available")
-        
-        # Input handling
-        self.input_thread = None
-        self.input_queue = queue.Queue()
         
         # Check if ffmpeg is available
         try:
@@ -761,34 +752,6 @@ class SynchronizedRecorder:
                 set_text("SOGO READY")
             except Exception as e:
                 print(f"LCD update failed: {e}")
-    
-    def start_input_thread(self):
-        """Start a thread to handle user input"""
-        def input_handler():
-            while not self.stop_event.is_set():
-                try:
-                    # Non-blocking input check
-                    if msvcrt.kbhit() if os.name == 'nt' else select.select([sys.stdin], [], [], 0.1)[0]:
-                        key = input().strip()
-                        if key == '' or key.lower() == 'q':
-                            self.input_queue.put('enter')
-                except (EOFError, KeyboardInterrupt):
-                    self.input_queue.put('quit')
-                    break
-                except Exception as e:
-                    print(f"Input error: {e}")
-                    break
-        
-        self.input_thread = threading.Thread(target=input_handler, daemon=True)
-        self.input_thread.start()
-        print("✅ Input thread started")
-    
-    def check_input(self):
-        """Check for user input without blocking"""
-        try:
-            return self.input_queue.get_nowait()
-        except queue.Empty:
-            return None
     
     def cleanup(self):
         """Cleanup resources"""
