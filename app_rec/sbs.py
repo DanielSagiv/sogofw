@@ -30,28 +30,24 @@ class SynchronizedRecorder:
 
     def start_csi_camera(self, cam_index: int, filename: str):
         print(f"📹 Starting CSI camera {cam_index} recording to {filename}...")
-        cmd_rpicam = [
+        cmd = [
             "/usr/bin/rpicam-vid", "--camera", str(cam_index),
             "--codec", "h264", "--framerate", "30",
-            "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2", "-o", "-"
+            "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2",
+            "-o", str(filename)
         ]
-        cmd_ffmpeg = [
-            "ffmpeg", "-loglevel", "warning", "-y", "-f", "h264", "-i", "-",
-            "-c:v", "copy", str(filename)
-        ]
-        rpicam = subprocess.Popen(cmd_rpicam, stdout=subprocess.PIPE)
-        ffmpeg = subprocess.Popen(cmd_ffmpeg, stdin=rpicam.stdout)
-        return rpicam, ffmpeg
+        return subprocess.Popen(cmd, stderr=subprocess.PIPE)
 
     def start_csi_cameras(self):
+        time.sleep(2)  # Let system stabilize
         cam1_path = self.recordings_dir / "cam1.h264"
         cam2_path = self.recordings_dir / "cam2.h264"
 
         self.cam1_proc = self.start_csi_camera(0, cam1_path)
-        print(f"cam1 PID: {self.cam1_proc[0].pid}")
+        print(f"cam1 PID: {self.cam1_proc.pid}")
 
         self.cam2_proc = self.start_csi_camera(1, cam2_path)
-        print(f"cam2 PID: {self.cam2_proc[0].pid}")
+        print(f"cam2 PID: {self.cam2_proc.pid}")
 
     def start_depthai_camera(self):
         print("🎥 Starting DepthAI camera recording...")
@@ -111,29 +107,27 @@ class SynchronizedRecorder:
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to convert {input_path.name} to MP4: {e}")
 
-    def stop_rpicam_ffmpeg(self, proc_tuple, label):
-        if proc_tuple:
-            rpicam_proc, ffmpeg_proc = proc_tuple
-            for proc, name in [(rpicam_proc, f"{label}-rpicam"), (ffmpeg_proc, f"{label}-ffmpeg")]:
-                if proc.poll() is None:
-                    print(f"⚠️ Sending SIGINT to {name} (PID: {proc.pid})...")
-                    proc.send_signal(signal.SIGINT)
-                    try:
-                        proc.wait(timeout=3.0)
-                    except subprocess.TimeoutExpired:
-                        print(f"❌ {name} did not stop gracefully, killing...")
-                        proc.kill()
-                        proc.wait()
-                    print(f"✅ {name} stopped.")
+    def stop_proc(self, proc, label):
+        if proc:
+            if proc.poll() is None:
+                print(f"⚠️ Sending SIGINT to {label} (PID: {proc.pid})...")
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=3.0)
+                except subprocess.TimeoutExpired:
+                    print(f"❌ {label} did not stop gracefully, killing...")
+                    proc.kill()
+                    proc.wait()
+                print(f"✅ {label} stopped.")
         else:
-            print(f"⚠️ {label} processes were not started.")
+            print(f"⚠️ {label} process was not started.")
 
     def stop_all(self):
         print("🛑 Stopping all cameras...")
         self.stop_event.set()
 
-        self.stop_rpicam_ffmpeg(self.cam1_proc, "cam1")
-        self.stop_rpicam_ffmpeg(self.cam2_proc, "cam2")
+        self.stop_proc(self.cam1_proc, "cam1")
+        self.stop_proc(self.cam2_proc, "cam2")
 
         if self.cam3_thread:
             print("Joining cam3 thread...")
