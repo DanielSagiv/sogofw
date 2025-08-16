@@ -1,173 +1,115 @@
-""#!/usr/bin/env python3
-"""
-Synchronized Multi-Cam Recording (CSI1, CSI2, DepthAI) to H.264
-Starts all 3 cameras together, stops on Enter, saves 3 synced files
-"""
+#!/usr/bin/env python3
 
+import os
 import subprocess
 import threading
 import time
-import datetime
-import cv2
-import depthai as dai
-import os
-from pathlib import Path
-import signal
+from datetime import datetime
 
-class SynchronizedRecorder:
-    def __init__(self):
-        self.recordings_dir = Path("recordings")
-        self.recordings_dir.mkdir(exist_ok=True)
+SESSION_DIR = f"recordings/session_{int(time.time())}"
+os.makedirs(SESSION_DIR, exist_ok=True)
 
-        self.cam1_proc = None
-        self.cam2_proc = None
-        self.cam3_thread = None
-        self.stop_event = threading.Event()
-        self.cam3_writer = None
-        self.cam3_pipeline = None
-        self.cam3_device = None
+CAM1_PATH = os.path.join(SESSION_DIR, "cam1.h264")
+CAM2_PATH = os.path.join(SESSION_DIR, "cam2.h264")
+CAM3_PATH = os.path.join(SESSION_DIR, "cam3.avi")
 
-    def start_csi_camera(self, cam_index: int, filename: str):
-        print(f"Starting CSI camera {cam_index} recording to {filename} via ffmpeg pipe...")
-        cmd_rpicam = [
-            "rpicam-vid", "--camera", str(cam_index),
-            "--codec", "h264", "--framerate", "30",
-            "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2", "-o", "-"
-        ]
-        cmd_ffmpeg = [
-            "ffmpeg", "-loglevel", "debug", "-y", "-f", "h264", "-i", "-",
-            "-c:v", "copy", str(filename)
-        ]
-        rpicam = subprocess.Popen(cmd_rpicam, stdout=subprocess.PIPE)
-        ffmpeg = subprocess.Popen(cmd_ffmpeg, stdin=rpicam.stdout)
-        return rpicam, ffmpeg
 
-    def start_csi_cameras(self):
-        cam1_path = self.recordings_dir / "cam1.h264"
-        cam2_path = self.recordings_dir / "cam2.h264"
+def record_csi_camera(index, output_path):
+    print(f"🎥 Starting CSI camera {index} recording to {output_path}...")
+    return subprocess.Popen([
+        "libcamera-vid",
+        "--camera", str(index),
+        "--codec", "h264",
+        "-t", "0",  # infinite
+        "-o", output_path,
+        "--width", "640",
+        "--height", "480",
+        "--framerate", "30"
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        self.cam1_proc = self.start_csi_camera(0, cam1_path)
-        print(f"cam1 PID: {self.cam1_proc[0].pid}")
 
-        self.cam2_proc = self.start_csi_camera(1, cam2_path)
-        print(f"cam2 PID: {self.cam2_proc[0].pid}")
+def convert_to_mp4(input_path, output_path):
+    print(f"🔄 Converting {input_path} to {output_path}...")
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", input_path,
+        "-c:v", "copy",
+        output_path
+    ])
+    print(f"✅ Conversion complete: {output_path}")
 
-    def start_depthai_camera(self):
-        print("Starting DepthAI camera recording (cam3.avi with XVID codec)...")
 
-        self.cam3_pipeline = dai.Pipeline()
-        camRgb = self.cam3_pipeline.create(dai.node.ColorCamera)
-        xout = self.cam3_pipeline.create(dai.node.XLinkOut)
-        xout.setStreamName("rgb")
-        camRgb.setPreviewSize(640, 480)
-        camRgb.setInterleaved(False)
-        camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.RGB)
-        camRgb.setFps(30)
-        camRgb.preview.link(xout.input)
+def record_cam3(output_path):
+    import depthai as dai
+    import cv2
 
-        self.cam3_device = dai.Device(self.cam3_pipeline)
-        q = self.cam3_device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
+    print("📹 Starting DepthAI camera recording...")
+    pipeline = dai.Pipeline()
+    cam_rgb = pipeline.create(dai.node.ColorCamera)
+    cam_rgb.setPreviewSize(640, 480)
+    cam_rgb.setInterleaved(False)
+    cam_rgb.setFps(30)
 
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        cam3_path = str(self.recordings_dir / "cam3.avi")
-        self.cam3_writer = cv2.VideoWriter(cam3_path, fourcc, 30.0, (640, 480))
+    xout_video = pipeline.create(dai.node.XLinkOut)
+    xout_video.setStreamName("video")
+    cam_rgb.video.link(xout_video.input)
 
-        if not self.cam3_writer.isOpened():
-            print("❌ ERROR: Failed to open VideoWriter for cam3.avi. Check codec and permissions.")
-            return
+    device = dai.Device(pipeline)
+    q = device.getOutputQueue(name="video", maxSize=30, blocking=True)
 
-        def cam3_loop():
-            frame_count = 0
-            while not self.stop_event.is_set():
-                in_frame = q.tryGet()
-                if in_frame:
-                    frame = in_frame.getCvFrame()
-                    self.cam3_writer.write(frame)
-                    frame_count += 1
-                time.sleep(0.001)
-            print(f"📹 cam3 total frames written: {frame_count}")
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    out = cv2.VideoWriter(output_path, fourcc, 30.0, (640, 480))
 
-        self.cam3_thread = threading.Thread(target=cam3_loop)
-        self.cam3_thread.start()
+    start_time = time.time()
+    while time.time() - start_time < 15:  # record 15 seconds
+        frame = q.get().getCvFrame()
+        out.write(frame)
 
-    def convert_h264_to_mp4(self, input_path: Path):
-        mp4_path = input_path.with_suffix(".mp4")
-        print(f"🔄 Converting {input_path.name} to {mp4_path.name}...")
-        try:
-            subprocess.run([
-                "ffmpeg", "-y", "-framerate", "30", "-i", str(input_path),
-                "-c:v", "copy", str(mp4_path)
-            ], check=True)
-            print(f"✅ Conversion complete: {mp4_path.name}")
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to convert {input_path.name} to MP4: {e}")
+    out.release()
+    device.close()
+    print(f"📼 cam3 saved to {output_path}")
 
-    def stop_rpicam_ffmpeg(self, proc_tuple, label):
-        if proc_tuple:
-            rpicam_proc, ffmpeg_proc = proc_tuple
-            for proc, name in [(rpicam_proc, f"{label}-rpicam"), (ffmpeg_proc, f"{label}-ffmpeg")]:
-                if proc.poll() is None:
-                    print(f"⚠️  Sending SIGINT to {name} (PID: {proc.pid})...")
-                    proc.send_signal(signal.SIGINT)
-                    try:
-                        proc.wait(timeout=3.0)
-                    except subprocess.TimeoutExpired:
-                        print(f"❌ {name} did not stop gracefully, killing...")
-                        proc.kill()
-                        proc.wait()
-                    print(f"✅ {name} stopped.")
-        else:
-            print(f"⚠️  {label} processes were not started.")
 
-    def stop_all(self):
-        print("Stopping all cameras...")
-        self.stop_event.set()
+def main():
+    input("Press Enter to start recording all cameras...")
 
-        self.stop_rpicam_ffmpeg(self.cam1_proc, "cam1")
-        self.stop_rpicam_ffmpeg(self.cam2_proc, "cam2")
+    start_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"\n🎬 Recording started at {start_time}")
 
-        if self.cam3_thread:
-            print("Joining cam3 thread...")
-            self.cam3_thread.join()
+    # Start cam3 (DepthAI)
+    cam3_thread = threading.Thread(target=record_cam3, args=(CAM3_PATH,))
+    cam3_thread.start()
 
-        if self.cam3_writer:
-            self.cam3_writer.release()
-            print("cam3.avi saved.")
+    # Start cam1 and cam2
+    cam1_proc = record_csi_camera(0, CAM1_PATH)
+    cam2_proc = record_csi_camera(1, CAM2_PATH)
 
-        if self.cam3_device:
-            print("Closing DepthAI device...")
-            self.cam3_device.close()
+    # Let them record
+    time.sleep(15)
 
-        for cam_file in ["cam1.h264", "cam2.h264"]:
-            path = self.recordings_dir / cam_file
-            if path.exists():
-                size = path.stat().st_size
-                print(f"📁 {cam_file} size: {size} bytes")
-                if size > 1000:
-                    self.convert_h264_to_mp4(path)
-                else:
-                    print(f"⚠️ Skipping conversion for {cam_file}: file too small")
-            else:
-                print(f"⚠️ {cam_file} missing, skipping")
+    # Stop cam1 and cam2
+    print("🛑 Stopping CSI cameras...")
+    cam1_proc.terminate()
+    cam2_proc.terminate()
+    cam1_proc.wait()
+    cam2_proc.wait()
 
-    def run(self):
-        print("Press Enter to start recording all cameras...")
-        input()
-        start_time = datetime.datetime.now()
-        print(f"🎬 Recording started at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+    # Wait for cam3 to finish
+    cam3_thread.join()
 
-        self.start_depthai_camera()
-        self.start_csi_cameras()
+    # Convert to MP4
+    if os.path.exists(CAM1_PATH):
+        convert_to_mp4(CAM1_PATH, CAM1_PATH.replace(".h264", ".mp4"))
+    else:
+        print("⚠️ cam1.h264 missing")
 
-        print("Recording... wait at least 5 seconds before stopping")
-        input()
+    if os.path.exists(CAM2_PATH):
+        convert_to_mp4(CAM2_PATH, CAM2_PATH.replace(".h264", ".mp4"))
+    else:
+        print("⚠️ cam2.h264 missing")
 
-        stop_time = datetime.datetime.now()
-        print(f"🛑 Recording stopped at {stop_time.strftime('%H:%M:%S.%f')[:-3]}")
+    print(f"✅ All recordings saved under '{SESSION_DIR}'")
 
-        self.stop_all()
-        print("✅ All recordings saved under 'recordings/'")
 
-if __name__ == '__main__':
-    recorder = SynchronizedRecorder()
-    recorder.run()
+if __name__ == "__main__":
+    main()
