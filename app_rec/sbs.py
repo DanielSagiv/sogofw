@@ -37,6 +37,7 @@ class SynchronizedRecorder:
             "--codec", "h264", "--framerate", "30",
             "--inline", "--timeout", "0", "--signal", "-o", cam1_path
         ])
+        print(f"cam1 PID: {self.cam1_proc.pid}")
 
         print(f"Launching CSI camera 2 in paused mode ({cam2_path})...")
         self.cam2_proc = subprocess.Popen([
@@ -44,6 +45,7 @@ class SynchronizedRecorder:
             "--codec", "h264", "--framerate", "30",
             "--inline", "--timeout", "0", "--signal", "-o", cam2_path
         ])
+        print(f"cam2 PID: {self.cam2_proc.pid}")
 
     def trigger_csi_cameras(self):
         print("▶️ Triggering CSI cameras to start recording...")
@@ -127,6 +129,7 @@ class SynchronizedRecorder:
         self.stop_rpicam_process(self.cam2_proc, "cam2")
 
         if self.cam3_thread:
+            print("Joining cam3 thread...")
             self.cam3_thread.join()
 
         if self.cam3_writer:
@@ -134,6 +137,7 @@ class SynchronizedRecorder:
             print("cam3.avi saved.")
 
         if self.cam3_device:
+            print("Closing DepthAI device...")
             self.cam3_device.close()
 
         # Check if files exist and are not empty before converting
@@ -158,6 +162,7 @@ class SynchronizedRecorder:
         self.start_csi_cameras()
         self.start_depthai_camera()
         time.sleep(1.5)  # Let DepthAI warm up
+        print(f"⏱ Triggering CSI at {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         self.trigger_csi_cameras()
 
         print("Recording... wait at least 5 seconds before stopping")
