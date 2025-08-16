@@ -35,7 +35,7 @@ class SynchronizedRecorder:
         self.cam1_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "0",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "-o", cam1_path
+            "--inline", "--timeout", "0", "--signal", "--start-immediately", "-o", cam1_path
         ])
         print(f"cam1 PID: {self.cam1_proc.pid}")
 
@@ -43,7 +43,7 @@ class SynchronizedRecorder:
         self.cam2_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "1",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "-o", cam2_path
+            "--inline", "--timeout", "0", "--signal", "--start-immediately", "-o", cam2_path
         ])
         print(f"cam2 PID: {self.cam2_proc.pid}")
 
@@ -55,6 +55,7 @@ class SynchronizedRecorder:
         if self.cam2_proc:
             print(f"Sending SIGUSR1 to cam2 (PID: {self.cam2_proc.pid})")
             self.cam2_proc.send_signal(signal.SIGUSR1)
+        print(f"⏱ Trigger sent at: {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
 
     def start_depthai_camera(self):
         print("Starting DepthAI camera recording (cam3.avi with XVID codec)...")
