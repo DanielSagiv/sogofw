@@ -79,6 +79,18 @@ class SynchronizedRecorder:
         self.cam3_thread = threading.Thread(target=cam3_loop)
         self.cam3_thread.start()
 
+    def convert_h264_to_mp4(self, input_path: Path):
+        mp4_path = input_path.with_suffix(".mp4")
+        print(f"🔄 Converting {input_path.name} to {mp4_path.name}...")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-framerate", "30", "-i", str(input_path),
+                "-c:v", "copy", str(mp4_path)
+            ], check=True)
+            print(f"✅ Conversion complete: {mp4_path.name}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to convert {input_path.name} to MP4: {e}")
+
     def stop_all(self):
         print("Stopping all cameras...")
 
@@ -103,6 +115,10 @@ class SynchronizedRecorder:
 
         if self.cam3_device:
             self.cam3_device.close()
+
+        # Convert cam1 and cam2 to mp4
+        self.convert_h264_to_mp4(self.recordings_dir / "cam1.h264")
+        self.convert_h264_to_mp4(self.recordings_dir / "cam2.h264")
 
     def run(self):
         print("Press Enter to start recording all cameras...")
