@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Synchronized Multi-Cam Recording (CSI1, CSI2, DepthAI) to H.264
-Starts all 3 cameras together, stops on Enter, saves 3 .h264 files
+Starts all 3 cameras together, stops on Enter, saves 3 synced files
 """
 
 import subprocess
@@ -10,9 +10,14 @@ import time
 import datetime
 import cv2
 import depthai as dai
+import os
+from pathlib import Path
 
 class SynchronizedRecorder:
     def __init__(self):
+        self.recordings_dir = Path("recordings")
+        self.recordings_dir.mkdir(exist_ok=True)
+
         self.cam1_proc = None
         self.cam2_proc = None
         self.cam3_thread = None
@@ -22,22 +27,25 @@ class SynchronizedRecorder:
         self.cam3_device = None
 
     def start_csi_cameras(self):
-        print("Starting CSI camera 1 (cam1.h264)...")
+        cam1_path = str(self.recordings_dir / "cam1.h264")
+        cam2_path = str(self.recordings_dir / "cam2.h264")
+
+        print(f"Starting CSI camera 1 ({cam1_path})...")
         self.cam1_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "0",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "-o", "cam1.h264"
+            "--inline", "--timeout", "0", "-o", cam1_path
         ])
 
-        print("Starting CSI camera 2 (cam2.h264)...")
+        print(f"Starting CSI camera 2 ({cam2_path})...")
         self.cam2_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "1",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "-o", "cam2.h264"
+            "--inline", "--timeout", "0", "-o", cam2_path
         ])
 
     def start_depthai_camera(self):
-        print("Starting DepthAI camera recording (cam3.h264)...")
+        print("Starting DepthAI camera recording (cam3.avi with H264 codec)...")
 
         self.cam3_pipeline = dai.Pipeline()
         camRgb = self.cam3_pipeline.create(dai.node.ColorCamera)
@@ -53,7 +61,8 @@ class SynchronizedRecorder:
         q = self.cam3_device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
 
         fourcc = cv2.VideoWriter_fourcc(*'H264')
-        self.cam3_writer = cv2.VideoWriter("cam3.h264", fourcc, 30.0, (640, 480))
+        cam3_path = str(self.recordings_dir / "cam3.avi")
+        self.cam3_writer = cv2.VideoWriter(cam3_path, fourcc, 30.0, (640, 480))
 
         def cam3_loop():
             while not self.stop_event.is_set():
@@ -86,7 +95,7 @@ class SynchronizedRecorder:
 
         if self.cam3_writer:
             self.cam3_writer.release()
-            print("cam3.h264 saved.")
+            print("cam3.avi saved.")
 
         if self.cam3_device:
             self.cam3_device.close()
@@ -108,7 +117,7 @@ class SynchronizedRecorder:
         print(f"🛑 Recording stopped at {stop_time.strftime('%H:%M:%S.%f')[:-3]}")
 
         self.stop_all()
-        print("✅ All recordings saved.")
+        print("✅ All recordings saved under 'recordings/'")
 
 if __name__ == '__main__':
     recorder = SynchronizedRecorder()
