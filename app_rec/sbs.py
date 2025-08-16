@@ -32,8 +32,10 @@ class SynchronizedRecorder:
         print(f"📹 Starting CSI camera {cam_index} recording to {filename}...")
         cmd = [
             "/usr/bin/rpicam-vid", "--camera", str(cam_index),
+            "--width", "640", "--height", "480",
             "--codec", "h264", "--framerate", "30",
-            "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2",
+            "--inline", "--profile", "high", "--level", "4.2",
+            "--timeout", "0",
             "-o", str(filename)
         ]
         return subprocess.Popen(cmd, stderr=subprocess.PIPE)
