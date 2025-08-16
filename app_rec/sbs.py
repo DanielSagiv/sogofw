@@ -45,7 +45,7 @@ class SynchronizedRecorder:
         ])
 
     def start_depthai_camera(self):
-        print("Starting DepthAI camera recording (cam3.avi with H264 codec)...")
+        print("Starting DepthAI camera recording (cam3.avi with XVID codec)...")
 
         self.cam3_pipeline = dai.Pipeline()
         camRgb = self.cam3_pipeline.create(dai.node.ColorCamera)
@@ -60,9 +60,13 @@ class SynchronizedRecorder:
         self.cam3_device = dai.Device(self.cam3_pipeline)
         q = self.cam3_device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
 
-        fourcc = cv2.VideoWriter_fourcc(*'H264')
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
         cam3_path = str(self.recordings_dir / "cam3.avi")
         self.cam3_writer = cv2.VideoWriter(cam3_path, fourcc, 30.0, (640, 480))
+
+        if not self.cam3_writer.isOpened():
+            print("❌ ERROR: Failed to open VideoWriter for cam3.avi. Check codec and permissions.")
+            return
 
         def cam3_loop():
             while not self.stop_event.is_set():
@@ -110,7 +114,7 @@ class SynchronizedRecorder:
         time.sleep(1.0)  # Give CSI cams 1 sec to initialize
         self.start_depthai_camera()
 
-        print("Recording... Press Enter to stop")
+        print("Recording... wait at least 5 seconds before stopping")
         input()
 
         stop_time = datetime.datetime.now()
