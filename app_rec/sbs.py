@@ -32,10 +32,10 @@ class SynchronizedRecorder:
         cmd_rpicam = [
             "rpicam-vid", "--camera", str(cam_index),
             "--codec", "h264", "--framerate", "30",
-            "--timeout", "0", "--inline", "-o", "-"
+            "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2", "-o", "-"
         ]
         cmd_ffmpeg = [
-            "ffmpeg", "-y", "-f", "h264", "-i", "-",
+            "ffmpeg", "-loglevel", "debug", "-y", "-f", "h264", "-i", "-",
             "-c:v", "copy", str(filename)
         ]
         rpicam = subprocess.Popen(cmd_rpicam, stdout=subprocess.PIPE)
