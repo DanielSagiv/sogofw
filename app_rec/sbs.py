@@ -12,6 +12,7 @@ import cv2
 import depthai as dai
 import os
 from pathlib import Path
+import signal
 
 class SynchronizedRecorder:
     def __init__(self):
@@ -91,20 +92,25 @@ class SynchronizedRecorder:
         except subprocess.CalledProcessError as e:
             print(f"❌ Failed to convert {input_path.name} to MP4: {e}")
 
+    def stop_rpicam_process(self, proc, label):
+        if proc and proc.poll() is None:
+            print(f"⚠️  Sending SIGINT to {label} to allow clean shutdown...")
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                print(f"❌ {label} did not stop gracefully, killing it...")
+                proc.kill()
+                proc.wait()
+            print(f"✅ {label} stopped and saved.")
+
     def stop_all(self):
         print("Stopping all cameras...")
 
         self.stop_event.set()
 
-        if self.cam1_proc:
-            self.cam1_proc.terminate()
-            self.cam1_proc.wait()
-            print("cam1.h264 saved.")
-
-        if self.cam2_proc:
-            self.cam2_proc.terminate()
-            self.cam2_proc.wait()
-            print("cam2.h264 saved.")
+        self.stop_rpicam_process(self.cam1_proc, "cam1")
+        self.stop_rpicam_process(self.cam2_proc, "cam2")
 
         if self.cam3_thread:
             self.cam3_thread.join()
@@ -116,9 +122,13 @@ class SynchronizedRecorder:
         if self.cam3_device:
             self.cam3_device.close()
 
-        # Convert cam1 and cam2 to mp4
-        self.convert_h264_to_mp4(self.recordings_dir / "cam1.h264")
-        self.convert_h264_to_mp4(self.recordings_dir / "cam2.h264")
+        # Check if files exist and are not empty before converting
+        for cam_file in ["cam1.h264", "cam2.h264"]:
+            path = self.recordings_dir / cam_file
+            if path.exists() and path.stat().st_size > 1000:
+                self.convert_h264_to_mp4(path)
+            else:
+                print(f"⚠️ Skipping conversion for {cam_file}: file missing or too small")
 
     def run(self):
         print("Press Enter to start recording all cameras...")
@@ -127,7 +137,7 @@ class SynchronizedRecorder:
         print(f"🎬 Recording started at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
         self.start_csi_cameras()
-        time.sleep(1.0)  # Give CSI cams 1 sec to initialize
+        time.sleep(1.5)  # Give CSI cams time to initialize
         self.start_depthai_camera()
 
         print("Recording... wait at least 5 seconds before stopping")
