@@ -31,7 +31,7 @@ class SynchronizedRecorder:
     def start_csi_camera(self, cam_index: int, filename: str):
         print(f"📹 Starting CSI camera {cam_index} recording to {filename}...")
         cmd_rpicam = [
-            "rpicam-vid", "--camera", str(cam_index),
+            "/usr/bin/rpicam-vid", "--camera", str(cam_index),
             "--codec", "h264", "--framerate", "30",
             "--timeout", "0", "--inline", "--profile", "high", "--level", "4.2", "-o", "-"
         ]
