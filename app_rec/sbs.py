@@ -35,26 +35,28 @@ class SynchronizedRecorder:
         self.cam1_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "0",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "-o", cam1_path
-        ])
+            "--pause", "--inline", "--timeout", "0", "-o", cam1_path
+        ], stderr=subprocess.PIPE)
         print(f"cam1 PID: {self.cam1_proc.pid}")
 
         print(f"Launching CSI camera 2 in paused mode ({cam2_path})...")
         self.cam2_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "1",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "-o", cam2_path
-        ])
+            "--pause", "--inline", "--timeout", "0", "-o", cam2_path
+        ], stderr=subprocess.PIPE)
         print(f"cam2 PID: {self.cam2_proc.pid}")
 
+        time.sleep(2.0)  # Allow cameras to initialize
+
     def trigger_csi_cameras(self):
-        print("▶️ Triggering CSI cameras to start recording...")
+        print("▶️ Triggering CSI cameras to start recording (SIGCONT)...")
         if self.cam1_proc:
-            print(f"Sending SIGUSR1 to cam1 (PID: {self.cam1_proc.pid})")
-            self.cam1_proc.send_signal(signal.SIGUSR1)
+            print(f"Sending SIGCONT to cam1 (PID: {self.cam1_proc.pid})")
+            self.cam1_proc.send_signal(signal.SIGCONT)
         if self.cam2_proc:
-            print(f"Sending SIGUSR1 to cam2 (PID: {self.cam2_proc.pid})")
-            self.cam2_proc.send_signal(signal.SIGUSR1)
+            print(f"Sending SIGCONT to cam2 (PID: {self.cam2_proc.pid})")
+            self.cam2_proc.send_signal(signal.SIGCONT)
         print(f"⏱ Trigger sent at: {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
 
     def start_depthai_camera(self):
