@@ -35,7 +35,7 @@ class SynchronizedRecorder:
         self.cam1_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "0",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "--start-immediately", "-o", cam1_path
+            "--inline", "--timeout", "0", "--signal", "-o", cam1_path
         ])
         print(f"cam1 PID: {self.cam1_proc.pid}")
 
@@ -43,7 +43,7 @@ class SynchronizedRecorder:
         self.cam2_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "1",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "--signal", "--start-immediately", "-o", cam2_path
+            "--inline", "--timeout", "0", "--signal", "-o", cam2_path
         ])
         print(f"cam2 PID: {self.cam2_proc.pid}")
 
@@ -141,7 +141,6 @@ class SynchronizedRecorder:
             print("Closing DepthAI device...")
             self.cam3_device.close()
 
-        # Check if files exist and are not empty before converting
         for cam_file in ["cam1.h264", "cam2.h264"]:
             path = self.recordings_dir / cam_file
             if path.exists():
@@ -162,7 +161,7 @@ class SynchronizedRecorder:
 
         self.start_csi_cameras()
         self.start_depthai_camera()
-        time.sleep(1.5)  # Let DepthAI warm up
+        time.sleep(2.0)  # Let DepthAI warm up
         print(f"⏱ Triggering CSI at {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
         self.trigger_csi_cameras()
 
