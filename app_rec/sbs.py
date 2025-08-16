@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+""#!/usr/bin/env python3
 """
 Synchronized Multi-Cam Recording (CSI1, CSI2, DepthAI) to H.264
 Starts all 3 cameras together, stops on Enter, saves 3 synced files
@@ -27,37 +27,23 @@ class SynchronizedRecorder:
         self.cam3_pipeline = None
         self.cam3_device = None
 
-    def start_csi_cameras(self):
-        cam1_path = str(self.recordings_dir / "cam1.h264")
-        cam2_path = str(self.recordings_dir / "cam2.h264")
-
-        print(f"Launching CSI camera 1 in paused mode ({cam1_path})...")
-        self.cam1_proc = subprocess.Popen([
-            "rpicam-vid", "--camera", "0",
+    def start_csi_camera(self, cam_index: int, filename: str):
+        print(f"Starting CSI camera {cam_index} recording to {filename}...")
+        return subprocess.Popen([
+            "rpicam-vid", "--camera", str(cam_index),
             "--codec", "h264", "--framerate", "30",
-            "--pause", "--inline", "--timeout", "0", "-o", cam1_path
-        ], stderr=subprocess.PIPE)
+            "--timeout", "0", "--inline", "-o", str(filename)
+        ])
+
+    def start_csi_cameras(self):
+        cam1_path = self.recordings_dir / "cam1.h264"
+        cam2_path = self.recordings_dir / "cam2.h264"
+
+        self.cam1_proc = self.start_csi_camera(0, cam1_path)
         print(f"cam1 PID: {self.cam1_proc.pid}")
 
-        print(f"Launching CSI camera 2 in paused mode ({cam2_path})...")
-        self.cam2_proc = subprocess.Popen([
-            "rpicam-vid", "--camera", "1",
-            "--codec", "h264", "--framerate", "30",
-            "--pause", "--inline", "--timeout", "0", "-o", cam2_path
-        ], stderr=subprocess.PIPE)
+        self.cam2_proc = self.start_csi_camera(1, cam2_path)
         print(f"cam2 PID: {self.cam2_proc.pid}")
-
-        time.sleep(2.0)  # Allow cameras to initialize
-
-    def trigger_csi_cameras(self):
-        print("▶️ Triggering CSI cameras to start recording (SIGCONT)...")
-        if self.cam1_proc:
-            print(f"Sending SIGCONT to cam1 (PID: {self.cam1_proc.pid})")
-            self.cam1_proc.send_signal(signal.SIGCONT)
-        if self.cam2_proc:
-            print(f"Sending SIGCONT to cam2 (PID: {self.cam2_proc.pid})")
-            self.cam2_proc.send_signal(signal.SIGCONT)
-        print(f"⏱ Trigger sent at: {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
 
     def start_depthai_camera(self):
         print("Starting DepthAI camera recording (cam3.avi with XVID codec)...")
@@ -125,7 +111,6 @@ class SynchronizedRecorder:
 
     def stop_all(self):
         print("Stopping all cameras...")
-
         self.stop_event.set()
 
         self.stop_rpicam_process(self.cam1_proc, "cam1")
@@ -161,11 +146,8 @@ class SynchronizedRecorder:
         start_time = datetime.datetime.now()
         print(f"🎬 Recording started at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
-        self.start_csi_cameras()
         self.start_depthai_camera()
-        time.sleep(2.0)  # Let DepthAI warm up
-        print(f"⏱ Triggering CSI at {datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-        self.trigger_csi_cameras()
+        self.start_csi_cameras()
 
         print("Recording... wait at least 5 seconds before stopping")
         input()
