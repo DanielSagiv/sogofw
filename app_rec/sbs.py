@@ -31,19 +31,28 @@ class SynchronizedRecorder:
         cam1_path = str(self.recordings_dir / "cam1.h264")
         cam2_path = str(self.recordings_dir / "cam2.h264")
 
-        print(f"Starting CSI camera 1 ({cam1_path})...")
+        print(f"Launching CSI camera 1 in paused mode ({cam1_path})...")
         self.cam1_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "0",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "-o", cam1_path
+            "--inline", "--timeout", "0", "--signal", "-o", cam1_path
         ])
 
-        print(f"Starting CSI camera 2 ({cam2_path})...")
+        print(f"Launching CSI camera 2 in paused mode ({cam2_path})...")
         self.cam2_proc = subprocess.Popen([
             "rpicam-vid", "--camera", "1",
             "--codec", "h264", "--framerate", "30",
-            "--inline", "--timeout", "0", "-o", cam2_path
+            "--inline", "--timeout", "0", "--signal", "-o", cam2_path
         ])
+
+    def trigger_csi_cameras(self):
+        print("▶️ Triggering CSI cameras to start recording...")
+        if self.cam1_proc:
+            print(f"Sending SIGUSR1 to cam1 (PID: {self.cam1_proc.pid})")
+            self.cam1_proc.send_signal(signal.SIGUSR1)
+        if self.cam2_proc:
+            print(f"Sending SIGUSR1 to cam2 (PID: {self.cam2_proc.pid})")
+            self.cam2_proc.send_signal(signal.SIGUSR1)
 
     def start_depthai_camera(self):
         print("Starting DepthAI camera recording (cam3.avi with XVID codec)...")
@@ -70,12 +79,15 @@ class SynchronizedRecorder:
             return
 
         def cam3_loop():
+            frame_count = 0
             while not self.stop_event.is_set():
                 in_frame = q.tryGet()
                 if in_frame:
                     frame = in_frame.getCvFrame()
                     self.cam3_writer.write(frame)
+                    frame_count += 1
                 time.sleep(0.001)
+            print(f"📹 cam3 total frames written: {frame_count}")
 
         self.cam3_thread = threading.Thread(target=cam3_loop)
         self.cam3_thread.start()
@@ -94,7 +106,7 @@ class SynchronizedRecorder:
 
     def stop_rpicam_process(self, proc, label):
         if proc and proc.poll() is None:
-            print(f"⚠️  Sending SIGINT to {label} to allow clean shutdown...")
+            print(f"⚠️  Sending SIGINT to {label} (PID: {proc.pid}) to allow clean shutdown...")
             proc.send_signal(signal.SIGINT)
             try:
                 proc.wait(timeout=2.0)
@@ -103,6 +115,8 @@ class SynchronizedRecorder:
                 proc.kill()
                 proc.wait()
             print(f"✅ {label} stopped and saved.")
+        else:
+            print(f"⚠️  {label} was already stopped or failed to start.")
 
     def stop_all(self):
         print("Stopping all cameras...")
@@ -125,10 +139,15 @@ class SynchronizedRecorder:
         # Check if files exist and are not empty before converting
         for cam_file in ["cam1.h264", "cam2.h264"]:
             path = self.recordings_dir / cam_file
-            if path.exists() and path.stat().st_size > 1000:
-                self.convert_h264_to_mp4(path)
+            if path.exists():
+                size = path.stat().st_size
+                print(f"📁 {cam_file} size: {size} bytes")
+                if size > 1000:
+                    self.convert_h264_to_mp4(path)
+                else:
+                    print(f"⚠️ Skipping conversion for {cam_file}: file too small")
             else:
-                print(f"⚠️ Skipping conversion for {cam_file}: file missing or too small")
+                print(f"⚠️ {cam_file} missing, skipping")
 
     def run(self):
         print("Press Enter to start recording all cameras...")
@@ -137,8 +156,9 @@ class SynchronizedRecorder:
         print(f"🎬 Recording started at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
         self.start_csi_cameras()
-        time.sleep(1.5)  # Give CSI cams time to initialize
         self.start_depthai_camera()
+        time.sleep(1.5)  # Let DepthAI warm up
+        self.trigger_csi_cameras()
 
         print("Recording... wait at least 5 seconds before stopping")
         input()
